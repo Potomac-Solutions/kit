@@ -1,0 +1,60 @@
+diff --git a/src/market.js b/src/market.js
+index d6abd51..0018361 100644
+--- a/src/market.js
++++ b/src/market.js
+@@ -8,6 +8,7 @@
+ // every open page follows.
+ import { createSyncServer } from '@zubra/sync/server';
+ import { sqliteLog } from '@zubra/sync/sqlite';
++import { createStages } from '@potomac-solutions/kit/stages';
+ import { people, farms as seedFarms, listings as seedListings, history, underway, DELIVERY_CENTS } from './seed.js';
+ 
+ /** The Zubra UI theme presets a farm can dress its storefront in. */
+@@ -116,6 +117,16 @@ export async function createMarket({ db = ':memory:' } = {}) {
+     if (!response?.ok) throw new Error(`The log refused a server write (${response?.status})`);
+   }
+ 
++  // An order's journey (placed, claimed, picked up, delivered) is the kit's `stages` module.
++  // The market says who the driver is and puts the answers into words.
++  const delivery = createStages({
++    store: { get: (collection, key) => docs.get(collection, key) ?? null, under: (collection, prefix = '') => docs.all(collection).filter((doc) => doc.key.startsWith(prefix)), write },
++    collection: 'orders',
++    steps: ['placed', 'claimed', 'picked', 'delivered'],
++    owner: 'driver',
++    stamp: ['delivered'],
++  });
++
+   // A fresh log gets the demo farms, their storefronts, first listings and three weeks of orders.
+   if (!docs.all('farms').length) {
+     for (const farm of seedFarms) {
+@@ -316,23 +327,17 @@ export async function createMarket({ db = ':memory:' } = {}) {
+     /** A driver claims an open delivery. Exactly one driver wins a race. */
+     async claim(person, formData) {
+       if (person?.role !== 'driver') return { error: 'Choose a driver to claim deliveries.' };
+-      const key = String(formData.get('order') ?? '');
+-      const order = docs.get('orders', key);
+-      if (!order) return { error: 'That order is gone.' };
+-      if (order.driver) return { error: order.driver === person.id ? 'Already yours.' : `${personName(order.driver)} took this one.` };
+-      await write('orders', key, { driver: person.id, driverName: person.name, status: 'claimed' });
+-      return { ok: true };
++      const answer = await delivery.claim(String(formData.get('order') ?? ''), person.id, { driverName: person.name });
++      if (answer.ok) return { ok: true };
++      if (answer.error === 'claimed') return { error: answer.yours ? 'Already yours.' : `${personName(answer.by)} took this one.` };
++      return { error: answer.error === 'wrong-step' ? `This order is ${answer.at}.` : 'That order is gone.' };
+     },
+ 
+     /** The claiming driver moves the order along: claimed → picked up → delivered. */
+     async advance(person, formData, to) {
+-      const key = String(formData.get('order') ?? '');
+-      const order = docs.get('orders', key);
+-      if (!order || order.driver !== person?.id) return { error: 'Only the driver on this delivery can update it.' };
+-      const from = { picked: 'claimed', delivered: 'picked' }[to];
+-      if (order.status !== from) return { error: `This order is ${order.status}.` };
+-      await write('orders', key, to === 'delivered' ? { status: to, delivered: Date.now() } : { status: to });
+-      return { ok: true };
++      const answer = await delivery.advance(String(formData.get('order') ?? ''), to, { by: person?.id });
++      if (answer.ok) return { ok: true };
++      return { error: answer.error === 'wrong-step' ? `This order is ${answer.at}.` : 'Only the driver on this delivery can update it.' };
+     },
+ 
+     close: () => inner.close(),

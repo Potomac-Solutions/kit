@@ -1,8 +1,8 @@
 # Kit
 
-Shared server modules for Potomac Solutions' platforms (Tailgate, CineStack, Outfitter and the rest). Built on [Zubra](https://github.com/journey-to-code-org/zubra): `@zubra/server`, `@zubra/actions`, `@zubra/sync` and Zubra UI.
+Shared server modules for Potomac Solutions' platforms (Tailgate, CineStack, Outfitter and the rest). Built to sit on [Zubra](https://github.com/journey-to-code-org/zubra): `@zubra/server`, `@zubra/actions`, `@zubra/sync` and Zubra UI.
 
-Private. The name is a placeholder.
+Private. The name is a placeholder. Version 0.1.0: no dependencies, Node 22.13 or later.
 
 ## What belongs here
 
@@ -21,39 +21,75 @@ Each layer imports only from the layers below it.
 ## Rules
 
 1. **One job.** A module's job fits in one sentence with no "and". If it needs an "and", it is two modules.
-2. **Extracted, never designed ahead.** A module arrives here when a second app needs it unchanged. Until then it lives in the app that wrote it, in its own file, free of that app's nouns (no "seat", "film" or "farm" in a hold module).
+2. **Taken from working code, and proved against it.** A module starts from code an app already runs, with that app's nouns removed (no "seat", "film" or "farm"). It is in when that app's own tests pass with the app importing the module. A module nothing has run yet is marked as such below.
 3. **Borrow the hard part.** Payments, login, text messages and file storage sit behind a small interface with one reference implementation. The kit does not own the engine.
 4. **Nothing leaks downward.** If a module needs Zubra to change, the change must make sense to someone who has never heard of this repository.
-5. **A module ships its own admin components.** The app arranges them.
+5. **Answers are codes, not sentences.** A module returns `{ ok: true, ... }` or `{ error: 'taken', unit }`. The app chooses the words.
 
 ## Modules
 
-None extracted yet.
-
-| Module | Its one job | First home | Extract when |
+| Import | Its one job | From | Proved by |
 | --- | --- | --- | --- |
-| `tenant` | Say which business a request is for | CineStack | Outfitter starts |
-| `hold` | Reserve one contested thing for a window of time | CineStack | Outfitter starts |
-| `price` | Turn an item and a context into a price | CineStack | Outfitter starts |
-| `pay` | Collect money for an order | CineStack | Outfitter starts |
-| `auth` | Say who is asking | Outfitter | Before any contract |
-| `stages` | Move a record through named steps | Tailgate | Work Ticket starts |
-| `notify` | Tell a person something | Work Ticket | A second app sends a notice |
-| `files` | Keep a file and return its address | Work Ticket | Showroom starts |
-| `catalog` | List what is for sale | Tailgate | Counter starts |
-| `forms` | Turn a form definition into a stored answer | Outfitter | Front Desk starts |
+| `kit/hold` | Reserve one contested thing for a window of time | CineStack `src/box-office.js` | CineStack's 5 browser tests, unchanged |
+| `kit/stages` | Move a record through named steps | Tailgate `src/market.js` | Tailgate's 9 browser tests |
+| `kit/tenant` | Say which business a request is for | New | Its own tests only |
+| `kit/price` | Turn an item and a context into a price | New | Its own tests only |
+| `kit/pay` | Collect money for an order | New (`pay(order)` from the CineStack plan) | Its own tests only |
+| `kit/auth` | Say who is asking | Both apps' `src/session.js` | Its own tests only |
+| `kit/notify` | Tell a person something | New, interface and an outbox | Its own tests only |
+| `kit/files` | Keep a file and return its address | New, interface, memory and disk | Its own tests only |
+| `kit/store` | The seam to where documents live (below) | Both apps | Both apps' tests |
 
-## Layout, once there is something to lay out
+Not here yet: `catalog` and `forms`. Nothing has needed either twice.
 
+Each module's `index.js` opens with what it does, the documents it writes and the interface it borrows. That comment is the module's documentation.
+
+## The store
+
+The kit owns no storage. Every module that keeps anything is handed a store:
+
+```js
+get(collection, key)             // one document's fields, or null            (synchronous)
+under(collection, prefix = '')   // [{ key, ...fields }] whose key starts so  (synchronous)
+write(collection, key, fields)   // merge fields; stored before it returns; the promise is the broadcast
 ```
-modules/<name>/
-  index.js        the interface, and nothing else exported
-  README.md       the one sentence, the interface, what it borrows
-  test/
-  components/     admin and guest .zb components, if any
+
+Because reads are synchronous and a write is stored before it returns, a module can check and then write with nothing in between. Every "exactly one wins" in the kit rests on that, so a store that awaits before storing breaks the kit. `checkStore(store, assert)` tests a store against the contract.
+
+In a Zubra app the store is the Sync log read on the server, so what a module writes reaches every open page:
+
+```js
+import { createHolds } from '@potomac-solutions/kit/hold';
+
+const holds = createHolds({
+  store: { get: log.get, under: log.under, write },   // CineStack's fieldLog and server write
+  holdMs: 5 * 60_000,
+  sweepMs: 1000,
+  max: 8,
+  names: { units: 'seats', holders: 'holds', list: 'seats', taken: 'sold' },
+});
+
+const answer = await holds.choose(guest.pub, showing.id, { toggle: 'C8' }, { valid: seatIds });
+// { ok: true, units: ['C8'], until } or { error: 'taken', unit: 'C8' }
 ```
 
-One package, one version, until a module needs its own.
+`memoryStore()` is for tests and for apps with nothing to sync.
+
+## Checking it
+
+```sh
+npm test          # 43 tests, Node's own runner
+npm run mutate    # breaks 18 behaviours one at a time; each must fail a test
+```
+
+`proof/` holds the two patches that move CineStack (at 1c17019) and Tailgate (at fc0f6ae) onto the kit. They are the record of what "proved by" means above, and the starting point when those apps resume.
+
+## Known limits
+
+- **A hold is inside one pool.** Reserving a kayak for Friday to Sunday is three pools, and `choose` is all-or-nothing in one pool only. Outfitter will need a choice across pools.
+- **The sweep reads every unit document.** Fine for one theatre's evening; needs an index on `until` beyond that.
+- **Tenancy is a lookup, not isolation.** `tenant` says which business a request is for. Keeping one business's documents away from another's is the store's job, and waits on a decision (one Sync log per business).
+- **`auth` uses `node:crypto`,** so it does not run on Workers yet.
 
 ## Plan
 

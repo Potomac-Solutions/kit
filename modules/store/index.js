@@ -1,0 +1,54 @@
+// The seam between the kit and wherever an app keeps its documents.
+//
+// The kit owns no storage. A module is handed a store, three functions:
+//
+//   get(collection, key)             one document's fields, or null            (synchronous)
+//   under(collection, prefix = '')   [{ key, ...fields }] whose key starts so  (synchronous)
+//   write(collection, key, fields)   merge fields into a document; returns a promise
+//
+// The one rule that matters: `write` has stored its fields by the time it returns. The promise
+// is only the broadcast to other devices. Because `get` and `under` are synchronous too, a module
+// can check and then write with no `await` between, and two requests can't interleave. Every
+// "exactly one wins" in the kit rests on that.
+//
+// In a Zubra app the store is the Sync log read on the server (CineStack's `fieldLog` plus its
+// server `write`, or `sync.documents()` / `sync.write()` once those are released). `memoryStore`
+// is for tests and for apps with nothing to sync.
+
+export function memoryStore() {
+  const collections = new Map();
+  const of = (collection) => collections.get(collection) ?? collections.set(collection, new Map()).get(collection);
+  return {
+    get: (collection, key) => {
+      const doc = of(collection).get(key);
+      return doc ? { ...doc } : null;
+    },
+    under: (collection, prefix = '') =>
+      [...of(collection)]
+        .filter(([key]) => key.startsWith(prefix))
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([key, fields]) => ({ key, ...fields })),
+    write(collection, key, fields) {
+      of(collection).set(key, { ...of(collection).get(key), ...fields });
+      return Promise.resolve();
+    },
+  };
+}
+
+/**
+ * Check that a store keeps the contract. An app runs this against its own store in a test, with
+ * `assert` from `node:assert/strict`. Uses a collection name nothing else would.
+ */
+export async function checkStore(store, assert, collection = 'kit-store-check') {
+  assert.equal(store.get(collection, 'a/1'), null, 'a missing document is null');
+  const sent = store.write(collection, 'a/1', { n: 1, tag: 'x' });
+  assert.deepEqual(store.get(collection, 'a/1'), { n: 1, tag: 'x' }, 'a write is stored before its promise settles');
+  await sent;
+  await store.write(collection, 'a/1', { n: 2 });
+  assert.deepEqual(store.get(collection, 'a/1'), { n: 2, tag: 'x' }, 'a write merges fields');
+  await store.write(collection, 'a/2', { n: 3 });
+  await store.write(collection, 'b/1', { n: 4, nested: { list: [1, null] } });
+  assert.deepEqual(store.under(collection, 'a/').map((doc) => doc.key), ['a/1', 'a/2'], 'under() filters by prefix, in key order');
+  assert.equal(store.under(collection).length, 3, 'under() with no prefix is the whole collection');
+  assert.deepEqual(store.get(collection, 'b/1').nested, { list: [1, null] }, 'values round-trip');
+}

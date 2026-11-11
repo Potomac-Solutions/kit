@@ -1,0 +1,133 @@
+diff --git a/src/box-office.js b/src/box-office.js
+index 3e48e10..6d389b9 100644
+--- a/src/box-office.js
++++ b/src/box-office.js
+@@ -10,6 +10,7 @@
+ // `by` and <guest> are the guest's public name (session.js), never their cookie id.
+ import { createHash } from 'node:crypto';
+ import { createSyncServer } from '@zubra/sync/server';
++import { createHolds } from '@potomac-solutions/kit/hold';
+ import { fieldLog } from './log.js';
+ import { theatre, auditoriums, films, showings as seedShowings } from './seed.js';
+ 
+@@ -69,19 +70,17 @@ export function createBoxOffice({ db = ':memory:', holdMs = 5 * 60_000, sweepMs
+     });
+   }
+ 
+-  const seatOf = (key) => key.slice(key.lastIndexOf('/') + 1);
+-  /** A seat document as it stands now: a hold past its time counts as free. */
+-  const current = (doc, now) => (doc?.state === 'held' && doc.until <= now ? { state: 'free', by: '', until: 0 } : { state: doc?.state ?? 'free', by: doc?.by ?? '', until: doc?.until ?? 0 });
+-
+-  /** Every seat of a showing that isn't free, by seat id. */
+-  function taken(showing, now = Date.now()) {
+-    const seats = new Map();
+-    for (const doc of log.under('seats', `${showing}/`)) {
+-      const seat = current(doc, now);
+-      if (seat.state !== 'free') seats.set(seatOf(doc.key), seat);
+-    }
+-    return seats;
+-  }
++  // Who has what, and for how long, is the kit's `hold` module. The box office only says which
++  // seats exist and puts the answers into words.
++  const holds = createHolds({
++    store: { get: log.get, under: log.under, write },
++    holdMs,
++    sweepMs,
++    max: MAX_SEATS,
++    names: { units: 'seats', holders: 'holds', list: 'seats', taken: 'sold' },
++    order: bySeat,
++  });
++  const { taken, sweep } = holds;
+ 
+   // A fresh theatre has a few seats already sold in each showing, so the map looks lived in.
+   if (!log.size) {
+@@ -94,23 +93,6 @@ export function createBoxOffice({ db = ':memory:', holdMs = 5 * 60_000, sweepMs
+     }
+   }
+ 
+-  /** Let go of every hold whose time is up, and tell everyone. */
+-  async function sweep(now = Date.now()) {
+-    const lapsed = log.under('seats').filter((doc) => doc.state === 'held' && doc.until <= now);
+-    if (!lapsed.length) return 0;
+-    const writes = [];
+-    const guests = new Set();
+-    for (const doc of lapsed) {
+-      guests.add(`${doc.key.slice(0, doc.key.lastIndexOf('/'))}/${doc.by}`);
+-      writes.push(write('seats', doc.key, { state: 'free', by: '', until: 0 }));
+-    }
+-    for (const key of guests) writes.push(write('holds', key, { seats: [], until: 0 }));
+-    await Promise.all(writes);
+-    return lapsed.length;
+-  }
+-  const timer = sweepMs ? setInterval(() => sweep().catch((error) => console.error(error)), sweepMs) : null;
+-  timer?.unref?.();
+-
+   return {
+     sync,
+     theatre,
+@@ -124,52 +106,33 @@ export function createBoxOffice({ db = ':memory:', holdMs = 5 * 60_000, sweepMs
+ 
+     /** A guest's seats in a showing, and when the hold runs out. */
+     held(guest, showing, now = Date.now()) {
+-      const seats = [...taken(showing, now)].filter(([, seat]) => seat.state === 'held' && seat.by === guest.pub);
+-      return { seats: seats.map(([id]) => id).sort(bySeat), until: seats.length ? Math.max(...seats.map(([, seat]) => seat.until)) : 0 };
++      const { units, until } = holds.held(guest.pub, showing, now);
++      return { seats: units, until };
+     },
+ 
+     /**
+      * A guest chooses seats. With `toggle`, that one seat is taken or let go (a tap, with
+      * JavaScript). Without it, the guest's seats become exactly the ticked ones (the plain form).
+-     * All or nothing: if any seat they want has gone, nothing changes. Nothing here awaits before
+-     * the writes are stored, so two guests asking for the same seat can't both get it.
++     * All or nothing: if any seat they want has gone, nothing changes.
+      */
+     async choose(guest, formData) {
+       if (!guest) return { error: 'Open the showing again to choose seats.' };
+       const showing = showings.get(String(formData.get('showing') ?? ''));
+       if (!showing) return { error: 'That showing is gone.' };
+-      const valid = seatIds.get(showing.auditorium);
+-      const now = Date.now();
+-      const seats = taken(showing.id, now);
+-      const mine = new Set([...seats].filter(([, seat]) => seat.state === 'held' && seat.by === guest.pub).map(([id]) => id));
+-
+       const toggle = String(formData.get('toggle') ?? '');
+-      let want;
+-      if (toggle) {
+-        if (!valid.has(toggle)) return { error: 'No such seat.', seat: toggle };
+-        want = new Set(mine);
+-        if (!want.delete(toggle)) want.add(toggle);
+-      } else {
+-        want = new Set(formData.getAll('seat').map(String));
+-        for (const seat of want) if (!valid.has(seat)) return { error: 'No such seat.', seat };
+-      }
+-      if (want.size > MAX_SEATS) return { error: `You can hold up to ${MAX_SEATS} seats at once.`, seat: toggle };
+-      for (const seat of want) {
+-        if (!mine.has(seat) && seats.has(seat)) return { error: `Seat ${seat} was just taken.`, seat };
+-      }
+-
+-      const until = want.size ? now + holdMs : 0;
+-      const writes = [];
+-      for (const seat of want) writes.push(write('seats', `${showing.id}/${seat}`, { state: 'held', by: guest.pub, until }));
+-      for (const seat of mine) if (!want.has(seat)) writes.push(write('seats', `${showing.id}/${seat}`, { state: 'free', by: '', until: 0 }));
+-      const list = [...want].sort(bySeat);
+-      writes.push(write('holds', `${showing.id}/${guest.pub}`, { seats: list, until }));
+-      await Promise.all(writes);
+-      return { ok: true, seats: list, until };
++      const asked = toggle ? { toggle } : { units: formData.getAll('seat') };
++      const answer = await holds.choose(guest.pub, showing.id, asked, { valid: seatIds.get(showing.auditorium) });
++      if (answer.ok) return { ok: true, seats: answer.units, until: answer.until };
++      const words = {
++        unknown: 'No such seat.',
++        limit: `You can hold up to ${MAX_SEATS} seats at once.`,
++        taken: `Seat ${answer.unit} was just taken.`,
++      };
++      return { error: words[answer.error] ?? 'Those seats could not be held.', seat: answer.unit ?? '' };
+     },
+ 
+     close() {
+-      clearInterval(timer);
++      holds.close();
+       log.close();
+     },
+   };
