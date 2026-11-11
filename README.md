@@ -1,8 +1,8 @@
 # Kit
 
-Shared server modules for Potomac Solutions' platforms (Tailgate, CineStack, Outfitter and the rest). Built to sit on [Zubra](https://github.com/journey-to-code-org/zubra): `@zubra/server`, `@zubra/actions`, `@zubra/sync` and Zubra UI.
+Shared building blocks for Potomac Solutions' platforms (Tailgate, CineStack, Outfitter and the rest): the rules a business runs on, the features built from them (a catalog, a cart, checkout), and, next, the components that show those features. Built to sit on [Zubra](https://github.com/journey-to-code-org/zubra): `@zubra/server`, `@zubra/actions`, `@zubra/sync` and Zubra UI.
 
-Private. The name is a placeholder. Version 0.1.0: no dependencies, Node 22.13 or later.
+Private. The name is a placeholder. Version 0.2.0: no dependencies, Node 22.13 or later.
 
 ## What belongs here
 
@@ -40,7 +40,37 @@ Each layer imports only from the layers below it.
 | `kit/files` | Keep a file and return its address | New, interface, memory and disk | Its own tests only |
 | `kit/store` | The seam to where documents live (below) | Both apps | Both apps' tests |
 
-Not here yet: `catalog` and `forms`. Nothing has needed either twice.
+### Features
+
+Built from the rules above. Each is a function of a store and the rules it uses.
+
+| Import | Its one job | Built from | From | Proved by |
+| --- | --- | --- | --- | --- |
+| `kit/catalog` | Say what's for sale and how many are left | `store` | Tailgate's listings and `placeOrder`'s stock check | Its own tests; Tailgate next |
+| `kit/cart` | Keep what someone means to buy | `store`, `catalog` | New | Its own tests; Tailgate next |
+| `kit/checkout` | Turn a cart into a paid order, all or nothing | `catalog`, `cart`, `pay`, `stages` | Tailgate's `placeOrder`, from one line to a cart | Its own tests; Tailgate next |
+
+```js
+import { createCatalog } from '@potomac-solutions/kit/catalog';
+import { createCart } from '@potomac-solutions/kit/cart';
+import { createCheckout } from '@potomac-solutions/kit/checkout';
+
+const catalog = createCatalog({ store });                       // items/<section>/<item>: { name, unit, cents, qty }
+const cart = createCart({ store, catalog });                    // carts/<holder>: { lines }
+const checkout = createCheckout({
+  catalog, cart, pay, stages,                                   // pay and stages from the rules
+  group: (item) => item.split('/')[0],                          // one order per farm, one payment
+  extras: (order, details) => (details.pickup ? [] : [{ label: 'Delivery', cents: 600 }]),
+});
+
+await cart.add(person.id, 'hilltop/eggs', 2);                   // { ok, qty } or { error: 'short', left }
+checkout.quote(person.id, details);                             // the orders, lines, extras and total, before paying
+await checkout.checkout(person.id, { details, method });        // { ok, id, orders } or { error: 'changed' | 'declined' | … }
+```
+
+Checkout takes the stock and empties the cart before anything is awaited, so a second press finds an empty cart and a second buyer finds the stock gone while the first pays. A payment that fails puts both back.
+
+Not here yet: `reserve` (a hold across several days or pools) and the components. `plan/roadmap-ecosystem.md` has the order.
 
 Each module's `index.js` opens with what it does, the documents it writes and the interface it borrows. That comment is the module's documentation.
 
@@ -78,8 +108,8 @@ const answer = await holds.choose(guest.pub, showing.id, { toggle: 'C8' }, { val
 ## Checking it
 
 ```sh
-npm test          # 43 tests, Node's own runner
-npm run mutate    # breaks 18 behaviours one at a time; each must fail a test
+npm test          # 64 tests, Node's own runner
+npm run mutate    # breaks 31 behaviours one at a time; each must fail a test
 ```
 
 `proof/` holds the two patches that move CineStack (at 1c17019) and Tailgate (at fc0f6ae) onto the kit. They are the record of what "proved by" means above, and the starting point when those apps resume.

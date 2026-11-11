@@ -1,8 +1,8 @@
 {
   "name": "@potomac-solutions/kit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Shared server modules for Potomac Solutions platforms, built on Zubra",
+  "description": "Shared building blocks for Potomac Solutions platforms, built on Zubra",
   "type": "module",
   "license": "UNLICENSED",
   "engines": {
@@ -17,7 +17,10 @@
     "./pay": "./modules/pay/index.js",
     "./auth": "./modules/auth/index.js",
     "./notify": "./modules/notify/index.js",
-    "./files": "./modules/files/index.js"
+    "./files": "./modules/files/index.js",
+    "./catalog": "./modules/catalog/index.js",
+    "./cart": "./modules/cart/index.js",
+    "./checkout": "./modules/checkout/index.js"
   },
   "files": [
     "modules/*/index.js",
