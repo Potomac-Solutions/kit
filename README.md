@@ -44,9 +44,9 @@ Features, built from the rules:
 
 | Import | Its one job | Built from | From | Proved by |
 | --- | --- | --- | --- | --- |
-| `kit/catalog` | Say what's for sale and how many are left | `store`, `price` | Tailgate's `catalog()` and stock check | Its own tests, and Tailgate's listing shape through `read`/`left`/`listed` |
+| `kit/catalog` | Say what's for sale and how many are left | `store`, `price` | Tailgate's `catalog()` and stock check; `put`, no-limit stock and `active` from the first C1 (#1) | Its own tests, and Tailgate's listing shape through `read`/`left`/`listed` |
 | `kit/cart` | Keep what someone means to buy | `store`, `catalog` | New | Its own tests only |
-| `kit/checkout` | Turn a cart into a paid order, all or nothing | `catalog`, `cart`, `pay`, `stages`, `notify` | Tailgate's `placeOrder`, from one line to many | Its own tests, twelve buyers at once, and over a real Sync server |
+| `kit/checkout` | Turn a cart into a paid order, all or nothing | `catalog`, `cart`, `pay`, `stages`, `notify` | Tailgate's `placeOrder`, from one line to many; `quote` from the first C1 (#1) | Its own tests, twelve buyers at once, and over a real Sync server |
 
 Not here yet: `reserve` (next), `forms`.
 
@@ -105,13 +105,15 @@ const done = await checkout.place(guest.pub, { key: form.get('checkout'), method
 // { ok: true, key, orders: ['c…/hillside'], ref, cents } or { error: 'not-ready', lines } / 'declined' / 'in-progress'
 ```
 
+`catalog.put(key, fields)` adds or changes an item, checked (a new one needs a name and a price). A count of `null` is no limit (a service, a download); `active: false` takes an item off sale without losing it. `checkout.quote(owner, { fields })` says what `place` would charge, order by order, without writing anything; fees see the fields, so a pickup can drop delivery.
+
 The order of things inside `place` is what makes it safe: stock is taken and the checkout recorded as pending before the first `await`, then the card is charged once (keyed by the checkout), then the orders start. A declined card puts the stock back and leaves the cart alone.
 
 ## Checking it
 
 ```sh
-npm test          # 70 tests, Node's own runner
-npm run mutate    # breaks 35 behaviours one at a time; each must fail a test
+npm test          # 76 tests, Node's own runner
+npm run mutate    # breaks 43 behaviours one at a time; each must fail a test
 ```
 
 `proof/` holds the two patches that move CineStack (at 1c17019) and Tailgate (at fc0f6ae) onto the kit. They are the record of what "proved by" means above, and the starting point when those apps resume.

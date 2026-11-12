@@ -6,7 +6,7 @@
 //   <collection>/<owner>   { <item key>: <qty>, ... }     0 means removed
 //
 // One field per item, so two devices adding different things both keep theirs (Sync merges by
-// field). `owner` is whatever the app knows the buyer by: a session's public name, an account id.
+// field). `left` on a line is `null` for an item with no limit. `owner` is whatever the app knows the buyer by: a session's public name, an account id.
 //
 // Answers are `{ ok: true, ... }` or `{ error: <code>, ... }`. The app chooses the words.
 
@@ -23,7 +23,7 @@ export function createCart({ store, catalog, collection = 'carts', max = 99 } = 
     if (qty > 0) {
       const found = catalog.item(item);
       if (!found) return { error: 'gone', item };
-      if (found.left < qty) return { error: 'sold-out', item, left: found.left };
+      if (found.left !== null && found.left < qty) return { error: 'sold-out', item, left: found.left };
     }
     await store.write(collection, owner, { [item]: qty });
     return { ok: true, item, qty };
@@ -61,7 +61,7 @@ export function createCart({ store, catalog, collection = 'carts', max = 99 } = 
         .map(([item, qty]) => {
           const found = catalog.item(item, context);
           if (!found) return { item, qty, gone: true, cents: 0, total: 0 };
-          return { item, qty, name: found.name, unit: found.unit, cents: found.cents, total: found.cents * qty, left: found.left, short: found.left < qty };
+          return { item, qty, name: found.name, unit: found.unit, cents: found.cents, total: found.cents * qty, left: found.left, short: found.left !== null && found.left < qty };
         });
       const ok = lines.filter((line) => !line.gone && !line.short);
       return {

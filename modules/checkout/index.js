@@ -45,9 +45,39 @@ export function createCheckout({
 } = {}) {
   if (!store || !catalog || !cart || !pay || !stages) throw new TypeError('createCheckout needs a store, catalog, cart, pay and stages');
 
+  const groupOf = (line) => String(group(line) ?? '');
+
+  /**
+   * What checking out would charge now, without writing anything: the cart's lines, the fees,
+   * and one entry per order (`group`, `lines`, `cents`, `fee`, `total`), with the grand total.
+   * `fields` are the ones `place` would put on the orders, so a fee can depend on them (pickup).
+   */
+  function quote(owner, { context = {}, fields = {} } = {}) {
+    const view = cart.view(owner, context);
+    const lines = view.lines.filter((line) => !line.gone && !line.short).map(LINE);
+    const extra = fees({ lines, cents: view.cents, context, fields }) ?? [];
+    for (const fee of extra) if (!Number.isInteger(fee?.cents) || fee.cents < 0) throw new TypeError('A fee is { label, cents } in whole cents');
+    const groups = new Map();
+    for (const line of lines) {
+      if (!groups.has(groupOf(line))) groups.set(groupOf(line), []);
+      groups.get(groupOf(line)).push(line);
+    }
+    const names = [...groups.keys()];
+    const orders = names.map((name, i) => {
+      const mine = groups.get(name);
+      const cents = mine.reduce((sum, line) => sum + line.total, 0);
+      // A fee with a group goes on that group's order; one without goes on the first.
+      const fee = extra.filter((one) => (one.group === undefined ? i === 0 : String(one.group) === name)).reduce((sum, one) => sum + one.cents, 0);
+      return { group: name, lines: mine, cents, fee, total: cents + fee };
+    });
+    return { ready: view.ready, lines: view.lines, fees: extra, orders, cents: view.cents + extra.reduce((sum, fee) => sum + fee.cents, 0) };
+  }
+
   return {
     /** A checkout as it stands, or null. */
     get: (key) => store.get(collection, key),
+
+    quote,
 
     /**
      * Check out `owner`'s cart. `method` goes to the payment provider and is never stored;
@@ -64,13 +94,12 @@ export function createCheckout({
       }
 
       // 1. The cart, priced now.
-      const view = cart.view(owner, context);
-      if (!view.lines.length) return { error: 'empty' };
-      if (!view.ready) return { error: 'not-ready', lines: view.lines.filter((line) => line.gone || line.short) };
-      const lines = view.lines.map(LINE);
-      const extra = fees({ lines, cents: view.cents, context }) ?? [];
-      for (const fee of extra) if (!Number.isInteger(fee?.cents) || fee.cents < 0) throw new TypeError('A fee is { label, cents } in whole cents');
-      const cents = view.cents + extra.reduce((sum, fee) => sum + fee.cents, 0);
+      const quoted = quote(owner, { context, fields });
+      if (!quoted.lines.length) return { error: 'empty' };
+      if (!quoted.ready) return { error: 'not-ready', lines: quoted.lines.filter((line) => line.gone || line.short) };
+      const lines = quoted.orders.flatMap((order) => order.lines);
+      const extra = quoted.fees;
+      const cents = quoted.cents;
 
       // 2. Stock and the pending checkout, both stored before the first await.
       const taken = catalog.take(lines);
@@ -87,19 +116,8 @@ export function createCheckout({
       }
 
       // 4. The orders, and the cart.
-      const groups = new Map();
-      for (const line of lines) {
-        const name = String(group(line) ?? '');
-        if (!groups.has(name)) groups.set(name, []);
-        groups.get(name).push(line);
-      }
-      const names = [...groups.keys()];
-      const orders = names.map((name) => (names.length === 1 && name === '' ? key : `${key}/${name}`));
-      const feeFor = (name, i) => extra.filter((fee) => (fee.group === undefined ? i === 0 : String(fee.group) === name)).reduce((sum, fee) => sum + fee.cents, 0);
-      const started = names.map((name, i) => {
-        const mine = groups.get(name);
-        return stages.start(orders[i], { ...fields, checkout: key, owner, group: name, lines: mine, cents: mine.reduce((sum, line) => sum + line.total, 0), fee: feeFor(name, i) });
-      });
+      const orders = quoted.orders.map((order) => (quoted.orders.length === 1 && order.group === '' ? key : `${key}/${order.group}`));
+      const started = quoted.orders.map((order, i) => stages.start(orders[i], { ...fields, checkout: key, owner, group: order.group, lines: order.lines, cents: order.cents, fee: order.fee }));
       const done = store.write(collection, key, { state: 'paid', ref: paid.ref, orders, at: now() });
       await Promise.all([...started, done, cart.clear(owner, lines)]);
 

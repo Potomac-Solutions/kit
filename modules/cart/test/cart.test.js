@@ -74,3 +74,13 @@ test('clear takes out what was bought and keeps what was added since', async () 
   await cart.clear('ada');
   assert.equal(cart.view('ada').count, 0);
 });
+
+test('an item with no limit is never short', async () => {
+  const { store, cart } = await setup();
+  await store.write('items', 'vale/tour', { name: 'Farm tour', cents: 2500, left: null });
+  assert.deepEqual(await cart.set('ada', 'vale/tour', 10), { ok: true, item: 'vale/tour', qty: 10 });
+  const view = cart.view('ada');
+  assert.equal(view.lines[0].short, false);
+  assert.equal(view.lines[0].left, null);
+  assert.equal(view.ready, true);
+});

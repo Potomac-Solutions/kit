@@ -142,3 +142,35 @@ test('a fee with no group goes on the first order, not every order', async () =>
   assert.equal(done.cents, 600 + 899 + 99);
   assert.deepEqual(done.orders.map((key) => store.get('orders', key).fee), [99, 0]);
 });
+
+test('quote says what checking out would charge, per order, and writes nothing', async () => {
+  const { store, catalog, cart, pay, stages } = await market();
+  const checkout = createCheckout({
+    store, catalog, cart, pay, stages,
+    group: (line) => line.item.split('/')[0],
+    fees: ({ lines, fields }) => (fields.pickup ? [] : [...new Set(lines.map((line) => line.item.split('/')[0]))].map((farm) => ({ label: 'Delivery', cents: 400, group: farm }))),
+  });
+  await cart.set('ada', 'hill/eggs', 2);
+  await cart.set('ada', 'vale/beef', 1);
+  const before = JSON.stringify(store.under('items')) + JSON.stringify(store.under('checkouts'));
+  const quoted = checkout.quote('ada');
+  assert.equal(quoted.ready, true);
+  assert.deepEqual(quoted.orders.map(({ group, cents, fee, total }) => ({ group, cents, fee, total })), [
+    { group: 'hill', cents: 1200, fee: 400, total: 1600 },
+    { group: 'vale', cents: 899, fee: 400, total: 1299 },
+  ]);
+  assert.equal(quoted.cents, 2899);
+  assert.equal(checkout.quote('ada', { fields: { pickup: true } }).cents, 2099, 'a fee can depend on the fields');
+  assert.equal(JSON.stringify(store.under('items')) + JSON.stringify(store.under('checkouts')), before, 'nothing written');
+  const done = await checkout.place('ada', { key: 'c1', method: CARD, fields: { pickup: true } });
+  assert.equal(done.cents, 2099, 'place charges what quote said');
+  assert.equal(store.get('orders', 'c1/hill').fee, 0);
+});
+
+test('a checkout of something with no limit leaves it with no limit', async () => {
+  const { store, cart, checkout } = await market();
+  await store.write('items', 'vale/tour', { name: 'Farm tour', cents: 2500, left: null });
+  await cart.set('ada', 'vale/tour', 4);
+  assert.equal((await checkout.place('ada', { key: 'c1', method: CARD })).ok, true);
+  assert.equal(store.get('items', 'vale/tour').left, null);
+});

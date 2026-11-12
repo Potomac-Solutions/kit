@@ -100,3 +100,42 @@ test('restock puts stock back', async () => {
   assert.equal(store.get('items', 'hill/eggs').left, 5);
   assert.equal(store.get('items', 'nope'), null, 'nothing is made up');
 });
+
+test('put checks what it is given, and a new item needs a name and a price', async () => {
+  const { store, catalog } = await shelf();
+  assert.deepEqual(await catalog.put('bad key'), { error: 'bad-key' });
+  assert.deepEqual(await catalog.put('hill/new', { name: 'Pie' }), { error: 'incomplete' });
+  assert.deepEqual(await catalog.put('hill/new', { name: ' ', cents: 100 }), { error: 'bad-name' });
+  assert.deepEqual(await catalog.put('hill/new', { name: 'Pie', cents: 1.5 }), { error: 'bad-price' });
+  assert.deepEqual(await catalog.put('hill/new', { name: 'Pie', cents: 900, left: -1 }), { error: 'bad-qty' });
+  assert.deepEqual(await catalog.put('hill/new', { name: 'Pie', cents: 900, active: 'no' }), { error: 'bad-active' });
+  assert.deepEqual(await catalog.put('hill/new', { name: 'Pie', unit: 'pie', cents: 900, left: 2 }), { ok: true });
+  assert.deepEqual(await catalog.put('hill/new', { cents: 950 }), { ok: true }, 'a change needs only what changes');
+  assert.equal(catalog.item('hill/new').cents, 950);
+  assert.equal(store.get('items', 'hill/new').left, 2);
+});
+
+test('null is no limit: always for sale, never short, never written by take', async () => {
+  const { store, catalog } = await shelf();
+  await catalog.put('vale/tour', { name: 'Farm tour', cents: 2500, left: null });
+  assert.equal(catalog.item('vale/tour').left, null);
+  assert.ok(catalog.items('vale/').some((item) => item.key === 'vale/tour'));
+  const taken = catalog.take([{ item: 'vale/tour', qty: 500 }]);
+  assert.equal(taken.ok, true);
+  await taken.sent;
+  assert.equal(store.get('items', 'vale/tour').left, null, 'still no limit');
+  await catalog.restock([{ item: 'vale/tour', qty: 3 }]);
+  assert.equal(store.get('items', 'vale/tour').left, null, 'restock leaves it alone');
+  await store.write('items', 'hill/nocount', { name: 'No count', cents: 100 });
+  assert.equal(catalog.item('hill/nocount').left, 0, 'a missing count is none left, not no limit');
+});
+
+test('active: false takes an item off sale without losing it', async () => {
+  const { store, catalog } = await shelf();
+  await catalog.put('hill/eggs', { active: false });
+  assert.equal(catalog.item('hill/eggs'), null);
+  assert.deepEqual(catalog.take([{ item: 'hill/eggs', qty: 1 }]), { error: 'gone', item: 'hill/eggs' });
+  assert.equal(store.get('items', 'hill/eggs').left, 5);
+  await catalog.put('hill/eggs', { active: true });
+  assert.equal(catalog.item('hill/eggs').left, 5);
+});
