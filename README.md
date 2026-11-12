@@ -133,6 +133,13 @@ const answer = await holds.choose(guest.pub, showing.id, { toggle: 'C8' }, { val
 
 `memoryStore()` is for tests and for apps with nothing to sync. `await syncStore(sync)` is the store over a Zubra Sync server (`createSyncServer`, or a `ZubraSync` Durable Object from inside it), `@zubra/sync` 5.8 or later; the kit is handed the server and imports nothing from Zubra.
 
+**Over Sync, pages must not write the kit's collections.** Sync lets any page push changes to any collection unless `authorize` says otherwise, and every rule here (stock, prices, "charged once", "one winner") assumes only the server writes. Always pass `serverOnly` to the Sync server, with any collection names you chose yourself:
+
+```js
+import { serverOnly, SERVER_ONLY } from '@potomac-solutions/kit/store';
+const sync = createSyncServer({ authorize: serverOnly([...SERVER_ONLY, 'orders']) });
+```
+
 ## A checkout
 
 ```js

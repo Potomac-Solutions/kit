@@ -71,6 +71,7 @@ const mutations = [
   ['pay', 'a paid id for another amount is refused', "if (before.cents !== cents || (before.currency ?? 'usd') !== currency) return { error: 'paid-other-amount' };", ''],
   ['checkout', "a checkout's payment id is its own", 'id: `checkout/${key}`', 'id: key'],
   ['reserve', "a booking's payment id is its own", 'id: `booking/${key}`', 'id: key'],
+  ['store', "serverOnly refuses a page's changes", "asked.kind === 'change' && only.has(asked.collection) ? false : next(asked)", 'next(asked)'],
 ];
 
 // Components, against the browser tests (`npm run mutate -- --components`, slower).

@@ -53,6 +53,28 @@ export async function checkStore(store, assert, collection = 'kit-store-check') 
   assert.deepEqual(store.get(collection, 'b/1').nested, { list: [1, null] }, 'values round-trip');
 }
 
+/**
+ * The collections the kit's modules write by default. Every rule in them (one winner, charged
+ * once, stock never below zero, the price from the catalog) assumes only the server writes them.
+ * Add the names you changed or chose yourself: the `stages` collection (`orders`, `rentals`),
+ * hold's `names`, a module's `collection`.
+ */
+export const SERVER_ONLY = Object.freeze(['items', 'carts', 'checkouts', 'payments', 'bookings', 'units', 'holds']);
+
+/**
+ * An `authorize` for `createSyncServer` that refuses a page's changes to the kit's collections.
+ * Pages still read them (scoped as you scope them); only the server, through `syncStore`, writes.
+ * Everything else goes to `next`, your own rule for your own collections.
+ *
+ *   createSyncServer({ authorize: serverOnly([...SERVER_ONLY, 'orders'], myAuthorize) })
+ *
+ * Use it wherever the kit runs on Sync: Sync lets pages write anything by default.
+ */
+export function serverOnly(collections = SERVER_ONLY, next = () => true) {
+  const only = new Set(collections);
+  return (asked) => (asked.kind === 'change' && only.has(asked.collection) ? false : next(asked));
+}
+
 const byKey = (a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 
 /**
