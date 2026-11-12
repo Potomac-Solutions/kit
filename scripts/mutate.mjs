@@ -55,7 +55,9 @@ const mutations = [
 
 // Components, against the browser tests (`npm run mutate -- --components`, slower).
 const components = [
-  ['catalog-grid', 'a sold-out item has no add button', 'zb-if={add && item.left > 0}', 'zb-if={add}'],
+  ['catalog-grid', 'a sold-out item has no add button', 'zb-if={add && item.left !== 0}', 'zb-if={add}'],
+  ['catalog-grid', 'an item with no limit is never sold out', 'zb-if={item.left === 0}', 'zb-if={item.left <= 0}'],
+  ['cart-panel', 'an item with no limit can always have one more', '(line.left !== null && line.qty >= line.left)', 'line.qty >= line.left'],
   ['cart-panel', 'checking out is off while a line cannot be bought', 'disabled={!cart.ready}>Check out', 'disabled={false}>Check out'],
   ['checkout-form', 'placing the order is off while the cart cannot be bought', 'disabled={!cart.ready}>Place order', 'disabled={false}>Place order'],
   ['checkout-form', 'the checkout key is sent', 'name="checkout" value={checkout}', 'name="checkout" value=""'],

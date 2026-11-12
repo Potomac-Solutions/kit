@@ -1,6 +1,6 @@
 <!--
   What's for sale: each item's name, price and what's left, and a button that adds one to the
-  cart. `items` is what `catalog.items()` returns (plus any `seller` name the app adds). Adding is
+  cart. `items` is what `catalog.items()` returns (`left: null` is no limit) (plus any `seller` name the app adds). Adding is
   a plain form post to `add` (the app's route), so it works before and without JavaScript; the
   form sends `item` and `qty`. Without `add`, the grid only shows.
   Built from Tailgate's market-grid and produce-card, with the farms taken out.
@@ -36,10 +36,13 @@
             <strong>{money(item.cents)}</strong>
             <s zb-if={item.base && item.base !== item.cents}>{money(item.base)}</s>
             <span>per {item.unit}</span>
-            <status-badge zb-if={item.left > 0 && item.left <= low} variant="warning">Only {item.left} left</status-badge>
-            <status-badge zb-if={item.left <= 0} variant="neutral">Sold out</status-badge>
+            <status-badge
+              zb-if={item.left !== null && item.left > 0 && item.left <= low}
+              variant="warning"
+            >Only {item.left} left</status-badge>
+            <status-badge zb-if={item.left === 0} variant="neutral">Sold out</status-badge>
           </p>
-          <form zb-if={add && item.left > 0} method="post" action={add}>
+          <form zb-if={add && item.left !== 0} method="post" action={add}>
             <input type="hidden" name="item" value={item.key}>
             <input type="hidden" name="qty" value="1">
             <action-button type="submit" label={`${label}: ${item.name}`}>{label}</action-button>

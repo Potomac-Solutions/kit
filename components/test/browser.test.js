@@ -209,6 +209,31 @@ test('the order shows its step as stages move it, and a side step as a badge', a
   }
 });
 
+for (const javaScriptEnabled of [true, false]) {
+  test(`an item with no limit: always for sale, one more always allowed (${javaScriptEnabled ? 'with' : 'without'} JavaScript)`, async () => {
+    const s = await shop();
+    const { page, go, context } = await device(s.base, javaScriptEnabled);
+    try {
+      await go('/');
+      const tour = page.locator('catalog-grid article[data-item="vale/tour"]');
+      assert.doesNotMatch(await text(tour), /Sold out|left/);
+      await addToCart(page, 'vale/tour');
+      await page.waitForURL(s.base + '/');
+      for (let i = 0; i < 2; i++) {
+        await line(page, 'vale/tour').locator('button', { hasText: '+' }).click();
+        await page.waitForURL(s.base + '/');
+      }
+      assert.equal(await text(line(page, 'vale/tour').locator('output')), '3');
+      assert.doesNotMatch(await text(line(page, 'vale/tour')), /left/);
+      assert.notEqual(await page.locator('cart-panel a', { hasText: 'Check out' }).getAttribute('href'), null);
+      assert.equal(s.store.get('items', 'vale/tour').left, null);
+    } finally {
+      await context.close();
+      await s.close();
+    }
+  });
+}
+
 test('without JavaScript, each checkout label names its field', async () => {
   const s = await shop();
   const { page, go, context } = await device(s.base, false);

@@ -139,10 +139,10 @@ The order of things inside `place` is what makes it safe: stock is taken and the
 ## Checking it
 
 ```sh
-npm test                          # 76 tests, Node's own runner
+npm test                          # 75 tests, Node's own runner
 npm run mutate                    # breaks 43 behaviours one at a time; each must fail a test
 npm run test:browser              # the components from the package in Chrome, with and without JavaScript (playwright)
-npm run mutate -- --components    # breaks 6 component behaviours; each must fail a browser test
+npm run mutate -- --components    # breaks 8 component behaviours; each must fail a browser test
 ```
 
 `components/test/shop.js` is the smallest shop the components make (`node components/test/shop.js`, then http://localhost:8040).

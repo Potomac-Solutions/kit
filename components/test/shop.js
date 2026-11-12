@@ -40,6 +40,7 @@ export async function createShop({ stock = { eggs: 5, beef: 20, honey: 2 } } = {
   await store.write('items', 'hill/eggs', { name: 'Eggs', unit: 'dozen', cents: 600, left: stock.eggs });
   await store.write('items', 'hill/honey', { name: 'Honey', unit: 'jar', cents: 1200, left: stock.honey });
   await store.write('items', 'vale/beef', { name: 'Ground beef', unit: 'lb', cents: 899, left: stock.beef });
+  await store.write('items', 'vale/tour', { name: 'Farm tour', unit: 'person', cents: 1500, left: null });
 
   const catalog = createCatalog({ store });
   const cart = createCart({ store, catalog });
