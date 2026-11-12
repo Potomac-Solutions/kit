@@ -2,7 +2,7 @@
 
 Shared server modules for Potomac Solutions' platforms (Tailgate, CineStack, Outfitter and the rest). Built to sit on [Zubra](https://github.com/journey-to-code-org/zubra): `@zubra/server`, `@zubra/actions`, `@zubra/sync` and Zubra UI.
 
-Private. The name is a placeholder. Version 0.1.0: no dependencies, Node 22.13 or later.
+Private. The name is a placeholder. Version 0.2.0: no dependencies, Node 22.13 or later.
 
 ## What belongs here
 
@@ -38,9 +38,17 @@ Each layer imports only from the layers below it.
 | `kit/auth` | Say who is asking | Both apps' `src/session.js` | Its own tests only |
 | `kit/notify` | Tell a person something | New, interface and an outbox | Its own tests only |
 | `kit/files` | Keep a file and return its address | New, interface, memory and disk | Its own tests only |
-| `kit/store` | The seam to where documents live (below) | Both apps | Both apps' tests |
+| `kit/store` | The seam to where documents live (below) | Both apps | Both apps' tests; `syncStore` on `@zubra/sync` 5.8 |
 
-Not here yet: `catalog` and `forms`. Nothing has needed either twice.
+Features, built from the rules:
+
+| Import | Its one job | Built from | From | Proved by |
+| --- | --- | --- | --- | --- |
+| `kit/catalog` | Say what's for sale and how many are left | `store`, `price` | Tailgate's `catalog()` and stock check; `put`, no-limit stock and `active` from the first C1 (#1) | Its own tests, and Tailgate's listing shape through `read`/`left`/`listed` |
+| `kit/cart` | Keep what someone means to buy | `store`, `catalog` | New | Its own tests only |
+| `kit/checkout` | Turn a cart into a paid order, all or nothing | `catalog`, `cart`, `pay`, `stages`, `notify` | Tailgate's `placeOrder`, from one line to many; `quote` from the first C1 (#1) | Its own tests, twelve buyers at once, and over a real Sync server |
+
+Not here yet: `reserve` (next), `forms`.
 
 Each module's `index.js` opens with what it does, the documents it writes and the interface it borrows. That comment is the module's documentation.
 
@@ -73,13 +81,39 @@ const answer = await holds.choose(guest.pub, showing.id, { toggle: 'C8' }, { val
 // { ok: true, units: ['C8'], until } or { error: 'taken', unit: 'C8' }
 ```
 
-`memoryStore()` is for tests and for apps with nothing to sync.
+`memoryStore()` is for tests and for apps with nothing to sync. `await syncStore(sync)` is the store over a Zubra Sync server (`createSyncServer`, or a `ZubraSync` Durable Object from inside it), `@zubra/sync` 5.8 or later; the kit is handed the server and imports nothing from Zubra.
+
+## A checkout
+
+```js
+import { syncStore } from '@potomac-solutions/kit/store';
+import { createCatalog } from '@potomac-solutions/kit/catalog';
+import { createCart } from '@potomac-solutions/kit/cart';
+import { createCheckout } from '@potomac-solutions/kit/checkout';
+
+const store = await syncStore(sync);
+const catalog = createCatalog({ store });                 // items/<seller>/<item> { name, unit, cents, left }
+const cart = createCart({ store, catalog });              // carts/<owner> { <item>: qty }
+const checkout = createCheckout({
+  store, catalog, cart, pay, stages,
+  group: (line) => line.item.split('/')[0],               // one order per seller
+  fees: ({ lines }) => [{ label: 'Delivery', cents: 400 }],
+});
+
+await cart.add(guest.pub, 'hillside/eggs', 2);
+const done = await checkout.place(guest.pub, { key: form.get('checkout'), method, fields: { address } });
+// { ok: true, key, orders: ['c…/hillside'], ref, cents } or { error: 'not-ready', lines } / 'declined' / 'in-progress'
+```
+
+`catalog.put(key, fields)` adds or changes an item, checked (a new one needs a name and a price). A count of `null` is no limit (a service, a download); `active: false` takes an item off sale without losing it. `checkout.quote(owner, { fields })` says what `place` would charge, order by order, without writing anything; fees see the fields, so a pickup can drop delivery.
+
+The order of things inside `place` is what makes it safe: stock is taken and the checkout recorded as pending before the first `await`, then the card is charged once (keyed by the checkout), then the orders start. A declined card puts the stock back and leaves the cart alone.
 
 ## Checking it
 
 ```sh
-npm test          # 43 tests, Node's own runner
-npm run mutate    # breaks 18 behaviours one at a time; each must fail a test
+npm test          # 76 tests, Node's own runner
+npm run mutate    # breaks 43 behaviours one at a time; each must fail a test
 ```
 
 `proof/` holds the two patches that move CineStack (at 1c17019) and Tailgate (at fc0f6ae) onto the kit. They are the record of what "proved by" means above, and the starting point when those apps resume.
@@ -90,6 +124,8 @@ npm run mutate    # breaks 18 behaviours one at a time; each must fail a test
 - **The sweep reads every unit document.** Fine for one theatre's evening; needs an index on `until` beyond that.
 - **Tenancy is a lookup, not isolation.** `tenant` says which business a request is for. Keeping one business's documents away from another's is the store's job, and waits on a decision (one Sync log per business).
 - **`auth` uses `node:crypto`,** so it does not run on Workers yet.
+- **A checkout left pending stays pending.** If the server stops between taking stock and hearing from the provider, the stock stays taken and the checkout says `pending`. Nothing sweeps it yet; the provider's own record (keyed by the checkout) says whether money moved.
+- **Cart and checkout have one app behind them.** Their options are few on purpose until CineStack and a third app use them.
 
 ## Plan
 

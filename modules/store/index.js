@@ -52,3 +52,23 @@ export async function checkStore(store, assert, collection = 'kit-store-check') 
   assert.equal(store.under(collection).length, 3, 'under() with no prefix is the whole collection');
   assert.deepEqual(store.get(collection, 'b/1').nested, { list: [1, null] }, 'values round-trip');
 }
+
+const byKey = (a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+
+/**
+ * The store over a Zubra Sync server (`createSyncServer` from `@zubra/sync/server`, 5.8 or later),
+ * or over a `ZubraSync` Durable Object from inside it. What the kit writes goes into the log and out
+ * to every open page. The kit imports nothing from Zubra; it is handed the server.
+ *
+ *   const store = await syncStore(sync);
+ */
+export async function syncStore(sync) {
+  if (typeof sync?.documents !== 'function' || typeof sync.write !== 'function') throw new TypeError('syncStore needs a Sync server with documents() and write() (@zubra/sync 5.8 or later)');
+  const docs = await sync.documents();
+  return {
+    get: (collection, key) => docs.get(collection, key) ?? null,
+    // The prefix is also checked here, so 5.6 and 5.7 (whose all() took no prefix) work too.
+    under: (collection, prefix = '') => docs.all(collection, prefix).filter((doc) => doc.key.startsWith(prefix)).sort(byKey),
+    write: (collection, key, fields) => sync.write(collection, key, fields),
+  };
+}
