@@ -2,7 +2,7 @@
 
 Shared server modules for Potomac Solutions' platforms (Tailgate, CineStack, Outfitter and the rest). Built to sit on [Zubra](https://github.com/journey-to-code-org/zubra): `@zubra/server`, `@zubra/actions`, `@zubra/sync` and Zubra UI.
 
-Private. The name is a placeholder. Version 0.2.0: no dependencies, Node 22.13 or later.
+Private. The name is a placeholder. Version 0.3.0: no dependencies, Node 22.13 or later.
 
 ## What belongs here
 
@@ -30,7 +30,7 @@ Each layer imports only from the layers below it.
 
 | Import | Its one job | From | Proved by |
 | --- | --- | --- | --- |
-| `kit/hold` | Reserve one contested thing for a window of time | CineStack `src/box-office.js` | CineStack's 5 browser tests, unchanged |
+| `kit/hold` | Reserve one contested thing for a window of time; `chooseAcross` for several pools at once, all or nothing | CineStack `src/box-office.js` | CineStack's 5 browser tests, unchanged |
 | `kit/stages` | Move a record through named steps | Tailgate `src/market.js` | Tailgate's 9 browser tests |
 | `kit/tenant` | Say which business a request is for | New | Its own tests only |
 | `kit/price` | Turn an item and a context into a price | New | Its own tests only |
@@ -47,8 +47,9 @@ Features, built from the rules:
 | `kit/catalog` | Say what's for sale and how many are left | `store`, `price` | Tailgate's `catalog()` and stock check; `put`, no-limit stock and `active` from the first C1 (#1) | Its own tests, and Tailgate's listing shape through `read`/`left`/`listed` |
 | `kit/cart` | Keep what someone means to buy | `store`, `catalog` | New | Its own tests only |
 | `kit/checkout` | Turn a cart into a paid order, all or nothing | `catalog`, `cart`, `pay`, `stages`, `notify` | Tailgate's `placeOrder`, from one line to many; `quote` from the first C1 (#1) | Its own tests, twelve buyers at once, and over a real Sync server |
+| `kit/reserve` | Book a unit, or several, for a stretch of pools (days, a showing), all or nothing; `states` and `days` for the components | `hold`, `price`, `pay`, `stages` | CineStack's box office; the multi-pool hold | Its own tests: a kayak Friday to Sunday, the same free kayak every day, a payment that outlasts the hold, and CineStack's seats in its own collections |
 
-Not here yet: `reserve` (next), `forms`.
+Not here yet: `forms`.
 
 ## Components
 
@@ -60,6 +61,11 @@ Not here yet: `reserve` (next), `forms`.
 | `cart-panel` | Lines, − and +, remove, fees, total; a line that sold out | `cart` (`cart.view()`), `fees`, `change`, `checkout` (a link, off while the cart can't be bought) | `change`: `item`, `qty` (0 removes) |
 | `checkout-form` | The order and total again, who and where, the card | `cart`, `fees`, `place`, `checkout` (the key), `delivery`, `problem`, `test-mode` | `place`: `checkout`, `name`, `email`, `phone`, `address`, `card` |
 | `order-status` | An order's steps, or a side step (cancelled) as a badge; what's in it | `order` (the document `stages` keeps), `steps`, `labels` | nothing |
+| `slot-picker` | Days (or any pools) with how many are free, and how many to hold; a full day can't be picked | `days` (`reserve.days()`, plus a `label`), `hold`, `key`, `count`, `max`, `unit` | `hold`: `key`, each `pool`, `count` |
+| `seat-map` | Seats in rows, with aisles: free, yours, being held, taken | `rows` (lists of `reserve.states()` entries, `null` for an aisle), `toggle`, `key` | `toggle`: `key`, `toggle` (the seat) |
+| `booking-summary` | A held booking: each unit and day priced, the total, how long it's held; Book and Let go. Nothing once it isn't held | `booking` (`reserve.get()`), `labels`, `held-until`, `book`, `release`, `key`, `unit` | `release`: `key` |
+
+A booking is paid with `checkout-form`, its lines given as a cart's (one per unit and day).
 
 They carry the six Zubra UI parts they use (`action-button`, `alert-banner`, `empty-state`, `status-badge`, `step-indicator`, `text-field`, from zubra-ui 0d2fdd0, unchanged), so the package works on its own.
 
@@ -78,6 +84,23 @@ and a page or component imports them by name:
 ```
 
 `@zubra/server` 5.9 is an optional peer dependency: an app using only the functions doesn't need it.
+
+## A booking
+
+```js
+const reserve = createReserve({
+  store, holds, pay, stages,                       // stages: e.g. ['booked', 'out', 'returned']
+  base: 4000,                                      // or (unit, pool) => cents
+  rules: [{ label: 'Weekend', when: { day: [0, 6] }, set: 5000 }],
+  context: (pool) => moment(dayOf(pool), 'America/New_York'),
+});
+
+const days = ['kayaks/2026-11-20', 'kayaks/2026-11-21', 'kayaks/2026-11-22'];
+await reserve.hold(guest.pub, { key, pools: days, count: 1, from: fleet });   // the same kayak all three days, or nothing
+await reserve.book(guest.pub, key, { method, fields: { phone } });           // charged once; confirmed every day
+```
+
+`book` checks every hold is still live, keeps them through the payment (`payMs`), charges the price shown when they were held, then confirms the units in every pool and starts the booking. A declined card confirms nothing; the holds run out on their own and it can be tried again while they last. CineStack's seats are one pool and a list of seats.
 
 ## The store
 
@@ -139,19 +162,20 @@ The order of things inside `place` is what makes it safe: stock is taken and the
 ## Checking it
 
 ```sh
-npm test                          # 75 tests, Node's own runner
-npm run mutate                    # breaks 43 behaviours one at a time; each must fail a test
+npm test                          # 94 tests, Node's own runner
+npm run mutate                    # breaks 60 behaviours one at a time; each must fail a test
 npm run test:browser              # the components from the package in Chrome, with and without JavaScript (playwright)
-npm run mutate -- --components    # breaks 8 component behaviours; each must fail a browser test
+npm run mutate -- --components    # breaks 14 component behaviours; each must fail a browser test
 ```
 
-`components/test/shop.js` is the smallest shop the components make (`node components/test/shop.js`, then http://localhost:8040).
+`components/test/shop.js` is the smallest shop the components make (`node components/test/shop.js`, then http://localhost:8040); `components/test/rentals.js` the smallest outfitter and cinema (http://localhost:8041).
 
 `proof/` holds the two patches that move CineStack (at 1c17019) and Tailgate (at fc0f6ae) onto the kit. They are the record of what "proved by" means above, and the starting point when those apps resume.
 
 ## Known limits
 
-- **A hold is inside one pool.** Reserving a kayak for Friday to Sunday is three pools, and `choose` is all-or-nothing in one pool only. Outfitter will need a choice across pools.
+- **A holder holds one list per pool.** Two drafts of `reserve` by the same person in the same pool share it, so the second replaces the first there.
+- **A payment that outlives `payMs` (2 minutes by default) is paid but not booked.** `book` answers `lapsed-after-payment` with the provider's `ref`, so the app can refund; the kit doesn't refund.
 - **The sweep reads every unit document.** Fine for one theatre's evening; needs an index on `until` beyond that.
 - **Tenancy is a lookup, not isolation.** `tenant` says which business a request is for. Keeping one business's documents away from another's is the store's job, and waits on a decision (one Sync log per business).
 - **`auth` uses `node:crypto`,** so it does not run on Workers yet.

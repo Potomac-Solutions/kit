@@ -8,11 +8,11 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const mutations = [
-  ['hold', 'the taken-unit guard', "if (!mine.has(unit) && all.has(unit)) return { error: 'taken', unit };", ''],
+  ['hold', 'the taken-unit guard', "if (!mine.has(unit) && all.has(unit)) return { error: 'taken', unit, pool };", ''],
   ['hold', 'expiry on read', "doc?.state === 'held' && doc.until <= at ? FREE", 'false ? FREE'],
   ['hold', 'the sweep', "filter((doc) => doc.state === 'held' && doc.until <= at)", 'filter(() => false)'],
-  ['hold', 'the ceiling', 'if (ceilingMs) until = Math.min(until, since + ceilingMs);', ''],
-  ['hold', 'the limit', "if (want.size > max) return { error: 'limit', max, unit: toggle };", ''],
+  ['hold', 'the ceiling', 'if (ceiling && ceilingMs) until = Math.min(until, since + ceilingMs);', ''],
+  ['hold', 'the limit', "if (want.size > max) return { error: 'limit', max, unit: asked, pool };", ''],
   ['stages', 'one claimant', "if (record[owner]) return { error: 'claimed', by: record[owner], yours: record[owner] === who };", ''],
   ['stages', 'step order', "if (!allowedFrom(to).includes(record[field])) return { error: 'wrong-step', at: record[field] };", ''],
   ['stages', 'who may advance', "if (!may({ record, to, by })) return { error: 'refused' };", ''],
@@ -50,6 +50,23 @@ const mutations = [
   ['catalog', 'restock leaves no limit alone', "if (!doc || doc[left] === null || ", "if (!doc || "],
   ['cart', 'no limit is never short', 'short: found.left !== null && found.left < qty', 'short: found.left < qty'],
   ['checkout', 'fees see the fields', 'fees({ lines, cents: view.cents, context, fields })', 'fees({ lines, cents: view.cents, context, fields: {} })'],
+  ['hold', 'chooseAcross checks every pool before writing', "      if (checked.error) return checked;\n      plans.push(checked);", "      plans.push(checked);"],
+  ['hold', 'a payment window is not cut by the ceiling', '...(ms ? { ms, ceiling: false } : {})', '...(ms ? { ms } : {})'],
+  ['hold', 'confirm with units needs every one still held', "if (lost.length) return { error: 'not-held', units: lost };", ''],
+  ['hold', 'confirm with units keeps the rest held', 'const rest = live.units.filter((unit) => !mine.includes(unit));', 'const rest = [];'],
+  ['reserve', 'count picks units free on every day', 'busy.every((taken) =>', 'busy.some((taken) =>'],
+  ['reserve', 'not enough free is refused', "if (open.length < count) return { error: 'none-free', left: open.length };", ''],
+  ['reserve', 'dropped days are let go', '...dropped.map((pool) => ({ pool, units: [] }))', ''],
+  ['reserve', 'a lapsed hold is refused before the charge', "if (lost.length) return { error: 'lapsed', pool, units: lost };", ''],
+  ['reserve', 'holds are kept through the payment', 'holds.chooseAcross(holder, mine, { ms: payMs })', 'holds.chooseAcross(holder, mine)'],
+  ['reserve', 'a pending booking is not booked twice', "if (booking.state === 'pending') return { error: 'in-progress' };\n      if (booking.state === 'released')", "if (booking.state === 'released')"],
+  ['reserve', 'a paid booking is not charged again', "if (booking.state === 'paid') return { ok: true, again: true, key, ref: booking.ref, cents: booking.cents };", ''],
+  ['reserve', 'a released booking cannot be booked', "if (booking.state === 'released') return { error: 'released' };", ''],
+  ['reserve', 'a lost unit after payment is not started', 'if (lost) {', 'if (false) {'],
+  ['reserve', "another holder's booking is refused", "if (booking.holder !== holder) return { error: 'not-yours' };\n    if (booking.state === 'paid') return { error: 'booked' };", "if (booking.state === 'paid') return { error: 'booked' };"],
+  ['reserve', 'price rules see the pool', '{ ...context(pool), pool, unit }', '{ pool, unit }'],
+  ['reserve', "a hold is only mine if it's the holder's", "holder && now.by === holder ? 'mine' : 'held'", "'mine'"],
+  ['reserve', 'a day counts my own units as free', "one.state === 'free' || one.state === 'mine'", "one.state === 'free'"],
   ['store', 'syncStore lists in key order', '.sort(byKey),\n', ',\n'],
 ];
 
@@ -62,6 +79,12 @@ const components = [
   ['checkout-form', 'placing the order is off while the cart cannot be bought', 'disabled={!cart.ready}>Place order', 'disabled={false}>Place order'],
   ['checkout-form', 'the checkout key is sent', 'name="checkout" value={checkout}', 'name="checkout" value=""'],
   ['order-status', 'the last step marks every step done', 'at === steps.length - 1 ? steps.length : at', 'at'],
+  ['slot-picker', 'a full day cannot be picked', 'disabled={day.free === 0 && !day.mine}', 'disabled={false}'],
+  ['slot-picker', 'days already held stay ticked', 'checked={day.mine}', 'checked={false}'],
+  ['seat-map', "seats held by others can't be pressed", "disabled={seat.state === 'held' || seat.state === 'taken'}", "disabled={seat.state === 'taken'}"],
+  ['seat-map', 'your seats are pressed', "aria-pressed={seat.state === 'mine' ? 'true' : 'false'}", "aria-pressed=\"false\""],
+  ['booking-summary', 'shows only a booking that is held', "const live = booking.state === 'held' || booking.state === 'failed'", 'const live = true'],
+  ['booking-summary', 'the total', 'money(booking.cents ?? 0)', 'money(0)'],
   ['order-status', 'a side step shows as a badge', 'zb-if={at < 0 && status}', 'zb-if={false}'],
 ];
 const browser = process.argv.includes('--components');
