@@ -26,6 +26,23 @@ const mutations = [
   ['files', 'ids are checked', "!ID.test(id ?? '') ||", ''],
   ['files', 'the type allow-list', "if (!Object.hasOwn(types, type ?? '')) return { error: 'type' };", ''],
   ['notify', 'a failing sender is caught', "result = { error: 'sender-failed', detail: String(error?.message ?? error) };", 'throw error;'],
+  ['catalog', 'take is all or nothing', "if (item.left < qty) return { error: 'sold-out', item: key, left: item.left };", ''],
+  ['catalog', 'two lines of one item add up', '(want.get(line.item) ?? 0) + line.qty', 'line.qty'],
+  ['catalog', 'unlisted items are not for sale', 'if (!doc || !listed(key, doc)) return null;', 'if (!doc) return null;'],
+  ['catalog', 'sold-out items leave the shelf', 'item && (all || stocked(item))', 'item'],
+  ['catalog', 'restock adds', 'Math.max(0, Math.floor(Number(doc[left]) || 0)) + qty', 'qty'],
+  ['cart', 'no more than is left', "if (found.left < qty) return { error: 'sold-out', item, left: found.left };", ''],
+  ['cart', 'the limit', "if (qty > max) return { error: 'too-many', max };", ''],
+  ['cart', 'clear keeps what was added since', 'Math.max(0, (now[item] ?? 0) - qty)', '0'],
+  ['cart', 'a short line makes the cart not ready', 'lines.length > 0 && ok.length === lines.length', 'lines.length > 0'],
+  ['checkout', 'a paid checkout is not charged again', "if (before.state === 'paid') return { ok: true, again: true, key, orders: before.orders, ref: before.ref };", ''],
+  ['checkout', 'a pending checkout is not run twice', "if (before.state === 'pending') return { error: 'in-progress' };", ''],
+  ['checkout', 'another owner cannot use a checkout', "if (before.owner !== owner) return { error: 'not-yours' };", ''],
+  ['checkout', 'a cart that cannot be bought is refused', "if (!view.ready) return { error: 'not-ready', lines: view.lines.filter((line) => line.gone || line.short) };", ''],
+  ['checkout', 'a declined card puts the stock back', 'await catalog.restock(lines);', ''],
+  ['checkout', 'the bought lines leave the cart', 'cart.clear(owner, lines)', 'Promise.resolve()'],
+  ['checkout', 'a fee with no group goes on the first order only', 'i === 0', 'true'],
+  ['store', 'syncStore lists in key order', '.sort(byKey),\n', ',\n'],
 ];
 
 let missed = 0;
