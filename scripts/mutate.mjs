@@ -11,7 +11,7 @@ const mutations = [
   ['hold', 'the taken-unit guard', "if (!mine.has(unit) && all.has(unit)) return { error: 'taken', unit, pool };", ''],
   ['hold', 'expiry on read', "doc?.state === 'held' && doc.until <= at ? FREE", 'false ? FREE'],
   ['hold', 'the sweep', "filter((doc) => doc.state === 'held' && doc.until <= at)", 'filter(() => false)'],
-  ['hold', 'the ceiling', 'if (ceiling && ceilingMs) until = Math.min(until, since + ceilingMs);', ''],
+  ['hold', 'the ceiling', 'if (ceilingMs) until = Math.min(until, since + ceilingMs + (ceiling ? 0 : ms));', ''],
   ['hold', 'the limit', "if (want.size > max) return { error: 'limit', max, unit: asked, pool };", ''],
   ['stages', 'one claimant', "if (record[owner]) return { error: 'claimed', by: record[owner], yours: record[owner] === who };", ''],
   ['stages', 'step order', "if (!allowedFrom(to).includes(record[field])) return { error: 'wrong-step', at: record[field] };", ''],
@@ -72,6 +72,14 @@ const mutations = [
   ['checkout', "a checkout's payment id is its own", 'id: `checkout/${key}`', 'id: key'],
   ['reserve', "a booking's payment id is its own", 'id: `booking/${key}`', 'id: key'],
   ['store', "serverOnly refuses a page's changes", "asked.kind === 'change' && only.has(asked.collection) ? false : next(asked)", 'next(asked)'],
+  ['hold', "a deeper pool's units aren't this pool's", "if (doc.key.slice(pool.length + 1).includes('/')) continue;", ''],
+  ['hold', "a unit can't name a pool", "!unit || unit.includes('/') || ", ''],
+  ['hold', 'a payment window runs past the ceiling only once', 'since + ceilingMs + (ceiling ? 0 : ms)', '(ceiling ? since + ceilingMs : Infinity)'],
+  ['hold', 'a limit by default', 'max = 8,', 'max = Infinity,'],
+  ['hold', 'a ceiling by default', 'ceilingMs = 20 * 60_000,', 'ceilingMs = 0,'],
+  ['stages', "side steps need the app's may", 'steps.includes(to) && record[owner]', 'record[owner]'],
+  ['stages', 'no one advances without a name', 'Boolean(by) && steps', 'steps'],
+  ['reserve', 'pools the business never offers are refused', "if (unknown) return { error: 'unknown-pool', pool: unknown };", ''],
 ];
 
 // Components, against the browser tests (`npm run mutate -- --components`, slower).

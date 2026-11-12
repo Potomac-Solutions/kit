@@ -45,6 +45,7 @@ export async function createRentals({ now = Date.now, holdMs = 5 * 60_000 } = {}
   const holds = createHolds({ store, holdMs, max: 4, now });
   const stages = createStages({ store, collection: 'rentals', steps: STEPS, stamp: false });
   const reserve = createReserve({
+    pools: (pool) => pool === SHOW || DAYS.includes(pool),
     store,
     holds,
     pay: createPay({ provider: testProvider(), store }),

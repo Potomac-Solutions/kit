@@ -210,3 +210,21 @@ test('states and days: plain data for a seat map and a day picker', async () => 
     { pool: SUN, free: 3, mine: false },
   ]);
 });
+
+test('pools the business never offers are refused', async () => {
+  const store = memoryStore();
+  const reserve = createReserve({ store, holds: createHolds({ store }), pay: createPay({ provider: testProvider(), store }), stages: createStages({ store, collection: 'rentals', steps: ['booked', 'out'] }), base: 4000, pools: new Set(WEEKEND) });
+  assert.deepEqual(await reserve.hold('mal', { key: 'm', pools: [SAT, `${SAT}/k1x`], units: ['k1'] }), { error: 'unknown-pool', pool: `${SAT}/k1x` });
+  assert.equal((await reserve.hold('ada', { key: 'a', pools: [SAT], units: ['k1'] })).ok, true);
+});
+
+test('declining card after declining card does not hold a kayak forever', async () => {
+  const now = clock();
+  const { holds, reserve } = outfitter({ now });
+  await reserve.hold('mal', { key: 'm', pools: [SAT], units: ['k1'] });
+  for (let i = 0; i < 40; i++) {
+    await reserve.book('mal', 'm', { method: { card: FAILING_CARD } });
+    now.add(60_000);
+  }
+  assert.equal(holds.taken(SAT).has('k1'), false);
+});

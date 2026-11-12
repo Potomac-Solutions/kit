@@ -39,6 +39,9 @@ export function createReserve({
   context = () => ({}),
   // How long the holds are kept while the payment is out. Longer than any provider takes.
   payMs = 2 * 60_000,
+  // Which pools can be booked: a Set, or (pool) => boolean. Pools come from the page, so without
+  // this a page can hold in a pool the business never offers.
+  pools: offered,
   now = Date.now,
 } = {}) {
   if (!store || !holds || !pay || !stages) throw new TypeError('createReserve needs a store, holds, pay and stages');
@@ -115,6 +118,8 @@ export function createReserve({
       if (!holder) return { error: 'no-holder' };
       pools = [...new Set(pools.map(String))];
       if (!pools.length) return { error: 'no-pools' };
+      const unknown = offered && pools.find((pool) => !(typeof offered === 'function' ? offered(pool) : offered.has(pool)));
+      if (unknown) return { error: 'unknown-pool', pool: unknown };
       const before = store.get(collection, key);
       const refused = refuseFor(before, holder);
       if (refused) return refused;

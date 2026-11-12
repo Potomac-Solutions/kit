@@ -18,9 +18,12 @@ export function createHolds({
   store,
   holdMs = 5 * 60_000,
   // The longest a holder can keep units by choosing again and again, counted from their first
-  // hold. 0 means no ceiling (each choice restarts the clock, as the CineStack spike did).
-  ceilingMs = 0,
-  max = Infinity,
+  // hold. A payment window (`ms`) may run past it once, by at most its own length, so one holder
+  // can't keep units forever by retrying a declined card. 0 means no ceiling (each choice
+  // restarts the clock, as the CineStack spike did): choose that only on purpose.
+  ceilingMs = 20 * 60_000,
+  // The most units one holder can hold in a pool. Infinity lets one person hold everything.
+  max = 8,
   sweepMs = 0,
   names = {},
   order = natural,
@@ -40,6 +43,8 @@ export function createHolds({
   function taken(pool, at = now()) {
     const units = new Map();
     for (const doc of store.under(N.units, `${pool}/`)) {
+      // `a/b/c` is unit `c` of pool `a/b`, not of pool `a`: a deeper pool's units aren't this one's.
+      if (doc.key.slice(pool.length + 1).includes('/')) continue;
       const unit = current(doc, at);
       if (unit.state !== 'free') units.set(unitOf(doc.key), unit);
     }
@@ -63,7 +68,7 @@ export function createHolds({
    */
   function plan(holder, pool, want, at, { valid, ms = holdMs, ceiling = true, unit: asked } = {}) {
     const exists = (unit) => !valid || (typeof valid === 'function' ? valid(unit) : valid.has(unit));
-    for (const unit of want) if (!exists(unit)) return { error: 'unknown', unit, pool };
+    for (const unit of want) if (!unit || unit.includes('/') || !exists(unit)) return { error: 'unknown', unit, pool };
     if (want.size > max) return { error: 'limit', max, unit: asked, pool };
     const all = taken(pool, at);
     const mine = new Set(mineIn(all, holder));
@@ -75,7 +80,7 @@ export function createHolds({
     let until = 0;
     if (want.size) {
       until = at + ms;
-      if (ceiling && ceilingMs) until = Math.min(until, since + ceilingMs);
+      if (ceilingMs) until = Math.min(until, since + ceilingMs + (ceiling ? 0 : ms));
     }
     return { pool, want, mine, since, until };
   }
@@ -121,8 +126,8 @@ export function createHolds({
    * The same across several pools at once (a kayak Friday, Saturday and Sunday): `picks` is
    * `[{ pool, units }]`, each the whole list the holder would hold in that pool. Every pool is
    * checked before anything is written, so it is all or nothing across them; a refusal names
-   * the pool. `ms` holds for longer than `holdMs` (a payment in progress) and isn't cut by the
-   * ceiling.
+   * the pool. `ms` holds for longer than `holdMs` (a payment in progress), and may run past the
+   * ceiling by at most `ms`.
    */
   async function chooseAcross(holder, picks, { valid, ms } = {}) {
     if (!holder) return { error: 'no-holder' };

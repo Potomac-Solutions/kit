@@ -93,6 +93,7 @@ const reserve = createReserve({
   base: 4000,                                      // or (unit, pool) => cents
   rules: [{ label: 'Weekend', when: { day: [0, 6] }, set: 5000 }],
   context: (pool) => moment(dayOf(pool), 'America/New_York'),
+  pools: (pool) => offered.includes(pool),         // pools come from the page: say which exist
 });
 
 const days = ['kayaks/2026-11-20', 'kayaks/2026-11-21', 'kayaks/2026-11-22'];
@@ -101,6 +102,10 @@ await reserve.book(guest.pub, key, { method, fields: { phone } });           // 
 ```
 
 `book` checks every hold is still live, keeps them through the payment (`payMs`), charges the price shown when they were held, then confirms the units in every pool and starts the booking. A declined card confirms nothing; the holds run out on their own and it can be tried again while they last. CineStack's seats are one pool and a list of seats.
+
+Holds are bounded by default: one holder holds at most 8 units in a pool (`max`), for at most 20 minutes from their first hold (`ceilingMs`), and the payment window can run past that once, by at most `payMs`, so retrying a declined card doesn't keep stock forever. A unit id can't contain `/`. Pass `ceilingMs: 0` or `max: Infinity` only on purpose.
+
+`stages` lets only the record's `owner` advance it, and only along `steps`. Side steps from `from` (cancel, refund), and records with no `owner` option, need the app's own `may({ record, to, by })`: the kit doesn't know who your managers are.
 
 ## The store
 

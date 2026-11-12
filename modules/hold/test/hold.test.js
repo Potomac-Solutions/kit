@@ -55,7 +55,7 @@ test('unknown units, the limit and a missing holder are refused without writing'
 test('a hold past its time counts as free at once, and the sweep tells everyone', async () => {
   const now = clock();
   const store = memoryStore();
-  const holds = createHolds({ store, holdMs: 1000, now });
+  const holds = createHolds({ store, holdMs: 1000, ceilingMs: 0, now });
   await holds.choose('a', 'p', { units: ['A1', 'A2'] });
   now.add(999);
   assert.equal((await holds.choose('b', 'p', { toggle: 'A1' })).error, 'taken');
@@ -113,7 +113,7 @@ test('confirm turns holds into taken units that never lapse', async () => {
 
 test("names let an app keep its own collections and fields (CineStack's)", async () => {
   const store = memoryStore();
-  const holds = createHolds({ store, names: { units: 'seats', holders: 'holds', list: 'seats', taken: 'sold' } });
+  const holds = createHolds({ store, ceilingMs: 0, names: { units: 'seats', holders: 'holds', list: 'seats', taken: 'sold' } });
   const { until } = await holds.choose('guest', 'show1', { toggle: 'C8' });
   assert.deepEqual(store.get('seats', 'show1/C8'), { state: 'held', by: 'guest', until });
   assert.deepEqual(store.get('holds', 'show1/guest'), { seats: ['C8'], until });
@@ -180,4 +180,44 @@ test('confirm with units takes only those, only while held, and keeps the rest h
   assert.deepEqual(store.get('holds', 'show1/ada').units, ['A3'], "the holder's summary still lists the rest");
   now.add(holds.holdMs);
   assert.deepEqual(await holds.confirm('ada', 'show1', ['A3']), { error: 'not-held', units: ['A3'] }, 'a lapsed hold cannot be confirmed');
+});
+
+test("a deeper pool's units aren't this pool's, and a unit can't name one", async () => {
+  const store = memoryStore();
+  const holds = createHolds({ store });
+  await holds.confirm('ada', 'kayaks/sat', ['k1']).catch(() => {});
+  await holds.choose('ada', 'kayaks/sat', { units: ['k1'] });
+  await holds.confirm('ada', 'kayaks/sat');
+  assert.equal((await holds.choose('mal', 'kayaks/sat/k1x', { units: ['k1'] })).ok, true);
+  assert.deepEqual(holds.taken('kayaks/sat').get('k1'), { state: 'taken', by: 'ada', until: 0 }, 'still the paid unit');
+  assert.deepEqual(await holds.choose('mal', 'kayaks/sat', { toggle: 'k1' }), { error: 'taken', unit: 'k1' });
+  assert.deepEqual(await holds.choose('mal', 'kayaks', { units: ['sat/k2'] }), { error: 'unknown', unit: 'sat/k2' });
+});
+
+test('a payment window runs past the ceiling once, not again and again', async () => {
+  const now = clock();
+  const holds = createHolds({ store: memoryStore(), holdMs: 60_000, ceilingMs: 10 * 60_000, now });
+  await holds.choose('mal', 'p', { units: ['A1'] });
+  let last;
+  for (let i = 0; i < 12; i++) {
+    last = await holds.chooseAcross('mal', [{ pool: 'p', units: ['A1'] }], { ms: 2 * 60_000 });
+    assert.ok(last.until <= 1_000_000 + 12 * 60_000);
+    now.add(60_000);
+  }
+  assert.equal(last.until, 1_000_000 + 12 * 60_000, 'ceiling plus one payment window');
+  assert.deepEqual(holds.held('mal', 'p').units, [], 'lapsed at 12 minutes, retries or not');
+});
+
+test('by default one holder holds at most 8 and not forever', async () => {
+  const now = clock();
+  const holds = createHolds({ store: memoryStore(), now });
+  const all = Array.from({ length: 9 }, (_, i) => `u${i}`);
+  assert.equal((await holds.choose('mal', 'p', { units: all })).error, 'limit');
+  await holds.choose('mal', 'p', { units: all.slice(0, 8) });
+  for (let i = 0; i < 4; i++) {
+    now.add(4 * 60_000);
+    await holds.choose('mal', 'p', { units: all.slice(0, 8) });
+  }
+  now.add(4 * 60_000);
+  assert.deepEqual(holds.held('mal', 'p').units, [], 'the 20-minute ceiling let them go');
 });

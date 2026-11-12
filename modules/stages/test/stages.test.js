@@ -80,3 +80,17 @@ test('stamps can be limited or switched off, and may() can be the app’s own ru
   assert.deepEqual(store.get('jobs', 'j1'), { what: 'shoulder mount', stage: 'in-work' });
   await assert.rejects(() => ticket.claim('j1', 'sam'), /owner/);
 });
+
+test('by default only the owner advances, only along the steps', async () => {
+  const store = memoryStore();
+  const stages = createStages({ store, collection: 'orders', steps: ['placed', 'claimed', 'picked'], owner: 'driver', from: { cancelled: ['placed', 'claimed'], refunded: ['cancelled'] } });
+  await stages.start('o1');
+  await stages.claim('o1', 'dana');
+  assert.deepEqual(await stages.advance('o1', 'cancelled', { by: 'dana' }), { error: 'refused' }, 'a side step needs the app\'s may');
+  assert.deepEqual(await stages.advance('o1', 'picked', { by: 'dana' }), { ok: true, at: 'picked' });
+  await stages.start('o2');
+  assert.deepEqual(await stages.advance('o2', 'claimed'), { error: 'refused' }, 'no by, no step');
+  const loose = createStages({ store, collection: 'jobs', steps: ['in', 'out'] });
+  await loose.start('j1');
+  assert.deepEqual(await loose.advance('j1', 'out', { by: 'anyone' }), { error: 'refused' }, 'no owner option: the app decides');
+});
