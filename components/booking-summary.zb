@@ -1,0 +1,55 @@
+<!--
+  What a held booking is: each unit and day with its price, the total, and how long it's held,
+  with a link to book it and a button to let it go. `booking` is what `reserve.get()` returns;
+  `labels` turns a pool into words ("Fri 20 Nov", "7:30 pm"), and `held-until` is the time the
+  app has already put into words. Letting go is a plain form post to `release` with `key`.
+  Shows nothing for a booking that isn't held.
+-->
+<script>
+  import './action-button.zb'
+
+  const money = (cents) => symbol + (cents / 100).toFixed(2)
+  const lines = booking.lines ?? []
+  const live = booking.state === 'held' || booking.state === 'failed'
+</script>
+<style>
+  :host { display: block; }
+  section { display: grid; gap: 0.8rem; padding: 1.1rem 1.2rem; border-radius: var(--radius, 0.5rem); background: var(--card, #fff); box-shadow: 0 0 0 1px var(--border, #dde); }
+  h2 { margin: 0; font-family: var(--font-heading, inherit); font-size: 1.25rem; }
+  .until { margin: 0; color: var(--muted-foreground, #667); }
+  dl { display: grid; grid-template-columns: 1fr auto; gap: 0.3rem 1rem; margin: 0; font-variant-numeric: tabular-nums; }
+  dt { color: var(--muted-foreground, #667); }
+  dd { margin: 0; text-align: right; }
+  .sum { color: inherit; font-weight: 700; font-size: 1.1rem; }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  .actions form { margin: 0; }
+</style>
+<booking-summary
+  booking={{}}
+  labels={{}}
+  key=""
+  book=""
+  release=""
+  held-until=""
+  heading="Held for you"
+  unit="Kayak"
+  symbol="$"
+>
+  <section zb-if={live && lines.length > 0} aria-label={heading}>
+    <h2>{heading}</h2>
+    <p class="until" zb-if={heldUntil}>Until {heldUntil}</p>
+    <dl>
+      <zb-each items={lines} as="line" key={`${line.pool}/${line.unit}`}>
+        <dt>{labels[line.pool] ?? line.pool} · {unit} {line.unit}</dt><dd>{money(line.cents)}</dd>
+      </zb-each>
+      <dt class="sum">Total</dt><dd class="sum">{money(booking.cents ?? 0)}</dd>
+    </dl>
+    <div class="actions">
+      <action-button zb-if={book} href={book}>Book</action-button>
+      <form zb-if={release} method="post" action={release}>
+        <input type="hidden" name="key" value={key}>
+        <action-button type="submit" variant="ghost">Let go</action-button>
+      </form>
+    </div>
+  </section>
+</booking-summary>

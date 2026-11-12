@@ -65,6 +65,8 @@ const mutations = [
   ['reserve', 'a lost unit after payment is not started', 'if (lost) {', 'if (false) {'],
   ['reserve', "another holder's booking is refused", "if (booking.holder !== holder) return { error: 'not-yours' };\n    if (booking.state === 'paid') return { error: 'booked' };", "if (booking.state === 'paid') return { error: 'booked' };"],
   ['reserve', 'price rules see the pool', '{ ...context(pool), pool, unit }', '{ pool, unit }'],
+  ['reserve', "a hold is only mine if it's the holder's", "holder && now.by === holder ? 'mine' : 'held'", "'mine'"],
+  ['reserve', 'a day counts my own units as free', "one.state === 'free' || one.state === 'mine'", "one.state === 'free'"],
   ['store', 'syncStore lists in key order', '.sort(byKey),\n', ',\n'],
 ];
 
@@ -77,6 +79,12 @@ const components = [
   ['checkout-form', 'placing the order is off while the cart cannot be bought', 'disabled={!cart.ready}>Place order', 'disabled={false}>Place order'],
   ['checkout-form', 'the checkout key is sent', 'name="checkout" value={checkout}', 'name="checkout" value=""'],
   ['order-status', 'the last step marks every step done', 'at === steps.length - 1 ? steps.length : at', 'at'],
+  ['slot-picker', 'a full day cannot be picked', 'disabled={day.free === 0 && !day.mine}', 'disabled={false}'],
+  ['slot-picker', 'days already held stay ticked', 'checked={day.mine}', 'checked={false}'],
+  ['seat-map', "seats held by others can't be pressed", "disabled={seat.state === 'held' || seat.state === 'taken'}", "disabled={seat.state === 'taken'}"],
+  ['seat-map', 'your seats are pressed', "aria-pressed={seat.state === 'mine' ? 'true' : 'false'}", "aria-pressed=\"false\""],
+  ['booking-summary', 'shows only a booking that is held', "const live = booking.state === 'held' || booking.state === 'failed'", 'const live = true'],
+  ['booking-summary', 'the total', 'money(booking.cents ?? 0)', 'money(0)'],
   ['order-status', 'a side step shows as a badge', 'zb-if={at < 0 && status}', 'zb-if={false}'],
 ];
 const browser = process.argv.includes('--components');

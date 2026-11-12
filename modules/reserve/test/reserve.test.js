@@ -194,3 +194,19 @@ test("CineStack's seats: two seats at one showing, in the box office's own colle
   assert.deepEqual(store.get('holds', 'show-1930/ada').seats, []);
   assert.equal(store.get('tickets', 't1').status, 'sold');
 });
+
+test('states and days: plain data for a seat map and a day picker', async () => {
+  const { holds, reserve } = outfitter();
+  await holds.choose('bo', FRI, { units: ['k1'] });
+  await reserve.hold('ada', { key: 'b1', pools: [FRI], units: ['k2'] });
+  await reserve.hold('cy', { key: 'b2', pools: [SAT], units: ['k1'] });
+  await reserve.book('cy', 'b2', { method: CARD });
+  assert.deepEqual(reserve.states(FRI, ['k1', 'k2', 'k3'], 'ada'), [{ unit: 'k1', state: 'held' }, { unit: 'k2', state: 'mine' }, { unit: 'k3', state: 'free' }]);
+  assert.deepEqual(reserve.states(FRI, ['k2'], 'bo'), [{ unit: 'k2', state: 'held' }], "someone else's hold");
+  assert.deepEqual(reserve.states(SAT, ['k1']), [{ unit: 'k1', state: 'taken' }]);
+  assert.deepEqual(reserve.days(WEEKEND, ['k1', 'k2', 'k3'], 'ada'), [
+    { pool: FRI, free: 2, mine: true },
+    { pool: SAT, free: 2, mine: false },
+    { pool: SUN, free: 3, mine: false },
+  ]);
+});
