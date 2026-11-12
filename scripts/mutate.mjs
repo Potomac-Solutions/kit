@@ -67,6 +67,13 @@ const mutations = [
   ['reserve', 'price rules see the pool', '{ ...context(pool), pool, unit }', '{ pool, unit }'],
   ['reserve', "a hold is only mine if it's the holder's", "holder && now.by === holder ? 'mine' : 'held'", "'mine'"],
   ['reserve', 'a day counts my own units as free', "one.state === 'free' || one.state === 'mine'", "one.state === 'free'"],
+  ['tenancy', 'a business is opened once', 'if (!spaces.has(tenant.id)) {', 'if (true) {'],
+  ['tenancy', 'a failed open is tried again', 'opening.catch(() => spaces.delete(tenant.id));', 'opening.catch(() => {});'],
+  ['tenancy', 'an unknown host gets nothing (Node)', "const tenant = tenants.for(req);\n      if (!tenant) {", "const tenant = tenants.for(req) ?? tenants.all()[0];\n      if (!tenant) {"],
+  ['tenancy', 'an unknown host gets nothing (fetch)', "const tenant = tenants.for(request);\n      if (!tenant) return notYours();", "const tenant = tenants.for(request) ?? tenants.all()[0];\n      if (!tenant) return notYours();"],
+  ['tenancy', 'sync requests are routed', 'path === base || path.startsWith(`${base}/`)', 'false'],
+  ['tenancy', "setup's features are on the space", 'return Object.assign(space, await setup(space));', 'return space;'],
+  ['tenancy', 'open must give a Sync server', "if (typeof sync?.documents !== 'function' || typeof sync.write !== 'function') throw new TypeError(`open(${tenant.id}) must return a Sync server`);", ''],
   ['store', 'syncStore lists in key order', '.sort(byKey),\n', ',\n'],
 ];
 

@@ -1,6 +1,6 @@
 {
   "name": "@potomac-solutions/kit",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Shared server modules and components for Potomac Solutions platforms, built on Zubra",
   "type": "module",
@@ -22,6 +22,7 @@
     "./cart": "./modules/cart/index.js",
     "./checkout": "./modules/checkout/index.js",
     "./reserve": "./modules/reserve/index.js",
+    "./tenancy": "./modules/tenancy/index.js",
     "./components/*": "./components/*"
   },
   "files": [

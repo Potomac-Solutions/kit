@@ -2,7 +2,7 @@
 
 Shared server modules for Potomac Solutions' platforms (Tailgate, CineStack, Outfitter and the rest). Built to sit on [Zubra](https://github.com/journey-to-code-org/zubra): `@zubra/server`, `@zubra/actions`, `@zubra/sync` and Zubra UI.
 
-Private. The name is a placeholder. Version 0.3.0: no dependencies, Node 22.13 or later.
+Private. The name is a placeholder. Version 0.4.0: no dependencies, Node 22.13 or later.
 
 ## What belongs here
 
@@ -33,6 +33,7 @@ Each layer imports only from the layers below it.
 | `kit/hold` | Reserve one contested thing for a window of time; `chooseAcross` for several pools at once, all or nothing | CineStack `src/box-office.js` | CineStack's 5 browser tests, unchanged |
 | `kit/stages` | Move a record through named steps | Tailgate `src/market.js` | Tailgate's 9 browser tests |
 | `kit/tenant` | Say which business a request is for | New | Its own tests only |
+| `kit/tenancy` | Keep each business's documents apart: one Sync log each, its sync traffic routed by host | New | Two businesses on one HTTP server, a SQLite file each: pull, push and the live stream |
 | `kit/price` | Turn an item and a context into a price | New | Its own tests only |
 | `kit/pay` | Collect money for an order | New (`pay(order)` from the CineStack plan) | Its own tests only |
 | `kit/auth` | Say who is asking | Both apps' `src/session.js` | Its own tests only |
@@ -102,6 +103,27 @@ await reserve.book(guest.pub, key, { method, fields: { phone } });           // 
 
 `book` checks every hold is still live, keeps them through the payment (`payMs`), charges the price shown when they were held, then confirms the units in every pool and starts the booking. A declined card confirms nothing; the holds run out on their own and it can be tried again while they last. CineStack's seats are one pool and a list of seats.
 
+## Many businesses on one deployment
+
+Each business gets its own Sync log (a SQLite file here, a Durable Object on Cloudflare), so nothing has to be filtered out of a shared one:
+
+```js
+import { createTenants } from '@potomac-solutions/kit/tenant';
+import { createTenancy } from '@potomac-solutions/kit/tenancy';
+
+const tenancy = createTenancy({
+  tenants: createTenants({ tenants }),                      // { id, hosts, theme, modules }
+  open: async (tenant) => createSyncServer({ log: await sqliteLog(`data/${tenant.id}.db`) }),
+  setup: ({ store }) => ({ catalog: createCatalog({ store }), holds: createHolds({ store }) }),
+});
+
+if (await tenancy.handle(req, res)) return;              // the page's sync requests, to its business's log
+const space = await tenancy.space(req);                  // { tenant, sync, store, catalog, holds }
+if (!space) return notFound(res);                        // a host nobody answers to
+```
+
+The business comes from the host name only. A business's log is opened the first time it's asked for, once, and its features are built on its own store. On Durable Objects the object is the log: send each business to its own (`idFromName(tenant.id)`) and run the kit inside it.
+
 ## The store
 
 The kit owns no storage. Every module that keeps anything is handed a store:
@@ -162,8 +184,8 @@ The order of things inside `place` is what makes it safe: stock is taken and the
 ## Checking it
 
 ```sh
-npm test                          # 94 tests, Node's own runner
-npm run mutate                    # breaks 60 behaviours one at a time; each must fail a test
+npm test                          # 105 tests, Node's own runner
+npm run mutate                    # breaks 67 behaviours one at a time; each must fail a test
 npm run test:browser              # the components from the package in Chrome, with and without JavaScript (playwright)
 npm run mutate -- --components    # breaks 14 component behaviours; each must fail a browser test
 ```
@@ -173,6 +195,8 @@ npm run mutate -- --components    # breaks 14 component behaviours; each must fa
 `proof/` holds the two patches that move CineStack (at 1c17019) and Tailgate (at fc0f6ae) onto the kit. They are the record of what "proved by" means above, and the starting point when those apps resume.
 
 ## Known limits
+
+- **`tenancy` holds each business's log in one process.** Several processes serving one business need a shared log and pub/sub between them (Zubra Sync's own note); on Cloudflare, one Durable Object per business does that.
 
 - **A holder holds one list per pool.** Two drafts of `reserve` by the same person in the same pool share it, so the second replaces the first there.
 - **A payment that outlives `payMs` (2 minutes by default) is paid but not booked.** `book` answers `lapsed-after-payment` with the provider's `ref`, so the app can refund; the kit doesn't refund.
