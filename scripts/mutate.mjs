@@ -17,7 +17,7 @@ const mutations = [
   ['stages', 'step order', "if (!allowedFrom(to).includes(record[field])) return { error: 'wrong-step', at: record[field] };", ''],
   ['stages', 'who may advance', "if (!may({ record, to, by })) return { error: 'refused' };", ''],
   ['pay', 'charge once', "if (before?.state === 'pending') return { error: 'in-progress' };", ''],
-  ['pay', 'no second charge after success', "if (before?.state === 'paid') return { ok: true, ref: before.ref, again: true };", ''],
+  ['pay', 'no second charge after success', "        return { ok: true, ref: before.ref, again: true };\n", ''],
   ['price', 'range end is exclusive', 'have < want.to', 'have <= want.to'],
   ['price', 'the floor at zero', 'Math.max(0, cents)', 'cents'],
   ['tenant', 'www and port stripped', ".replace(/^www\\./, '')", ''],
@@ -68,6 +68,9 @@ const mutations = [
   ['reserve', "a hold is only mine if it's the holder's", "holder && now.by === holder ? 'mine' : 'held'", "'mine'"],
   ['reserve', 'a day counts my own units as free', "one.state === 'free' || one.state === 'mine'", "one.state === 'free'"],
   ['store', 'syncStore lists in key order', '.sort(byKey),\n', ',\n'],
+  ['pay', 'a paid id for another amount is refused', "if (before.cents !== cents || (before.currency ?? 'usd') !== currency) return { error: 'paid-other-amount' };", ''],
+  ['checkout', "a checkout's payment id is its own", 'id: `checkout/${key}`', 'id: key'],
+  ['reserve', "a booking's payment id is its own", 'id: `booking/${key}`', 'id: key'],
 ];
 
 // Components, against the browser tests (`npm run mutate -- --components`, slower).

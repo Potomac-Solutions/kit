@@ -165,7 +165,7 @@ export function createReserve({
         return extended;
       }
 
-      const paid = await pay.pay({ id: key, cents: booking.cents, method, description });
+      const paid = await pay.pay({ id: `booking/${key}`, cents: booking.cents, method, description });
       if (!paid.ok) {
         await store.write(collection, key, { state: 'failed', reason: paid.error, at: now() });
         return { error: paid.error, key };

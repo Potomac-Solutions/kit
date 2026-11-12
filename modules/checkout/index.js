@@ -108,7 +108,7 @@ export function createCheckout({
       await Promise.all([taken.sent, pending]);
 
       // 3. Charge once.
-      const paid = await pay.pay({ id: key, cents, description, method });
+      const paid = await pay.pay({ id: `checkout/${key}`, cents, description, method });
       if (!paid.ok) {
         await catalog.restock(lines);
         await store.write(collection, key, { state: 'failed', reason: paid.error, at: now() });
