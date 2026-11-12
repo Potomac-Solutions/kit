@@ -1,0 +1,56 @@
+<!-- Zubra UI (alert-banner.zb at journey-to-code-org/zubra-ui 0d2fdd0), carried so the kit's components work from the package. An app's own copy wins. -->
+<!--
+  A message in the page: info, success, warning or danger, with an icon, a heading and text. A
+  danger alert is announced as soon as it appears (role="alert"); the others politely
+  (role="status"). `dismissible` adds a close button, which hides it and fires `close`.
+  @slot - The message.
+  @slot heading - Its heading (defaults to `heading`).
+  @slot actions - Buttons or links under the message.
+  @fires beforeclose - The close button was pressed; cancel it to keep the alert.
+  @fires close - The alert was closed.
+-->
+<script>
+  import { emit, hasSlot } from '@zubra/runtime'
+
+  const actions = hasSlot('actions')
+  let closed = false
+  const icons = { info: "i", success: "✓", warning: "!", danger: "!" }
+
+  function close() {
+    if (!emit('beforeclose')) return
+    closed = true
+    emit('close')
+  }
+</script>
+<style>
+  :host { display: block; }
+  .alert-box[hidden] { display: none; }
+  .alert-box { display: grid; grid-template-columns: auto 1fr auto; gap: 0.25rem 0.75rem; padding: 0.9rem 1rem; border: 1px solid var(--tone-border); border-radius: var(--radius, 0.625rem); background: var(--tone-bg); color: var(--foreground, #18181b); }
+  .alert-info { --tone: oklch(0.55 0.15 255); }
+  .alert-success { --tone: oklch(0.55 0.14 150); }
+  .alert-warning { --tone: oklch(0.6 0.14 70); }
+  .alert-danger { --tone: var(--destructive, #dc2626); }
+  .alert-box { --tone-bg: color-mix(in oklab, var(--tone) 9%, var(--background, #fff)); --tone-border: color-mix(in oklab, var(--tone) 35%, var(--background, #fff)); }
+  .alert-icon { display: grid; place-items: center; width: 1.35rem; height: 1.35rem; margin-top: 0.05rem; border-radius: 50%; background: var(--tone); color: #fff; font-size: 0.8rem; font-weight: 800; }
+  .alert-warning .alert-icon { color: #1c1917; }
+  .alert-danger .alert-icon { background: color-mix(in oklab, var(--tone) 78%, #000); }
+  .alert-content { display: grid; gap: 0.25rem; min-width: 0; }
+  strong { font-weight: 700; }
+  strong:empty { display: none; }
+  .alert-text { color: color-mix(in oklab, var(--foreground, #18181b) 85%, var(--tone)); }
+  .alert-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.4rem; }
+  .alert-close { width: 1.75rem; height: 1.75rem; margin: -0.25rem -0.35rem 0 0; border: 0; border-radius: 50%; background: none; color: inherit; font-size: 1.25rem; line-height: 1; cursor: pointer; }
+  .alert-close:hover { background: color-mix(in oklab, var(--tone) 14%, transparent); }
+  .alert-close:focus-visible { outline: 2px solid var(--ring, #a1a1aa); outline-offset: 1px; }
+</style>
+<alert-banner variant="info" heading="" dismissible={false}>
+  <div hidden={closed} class="alert-box alert-{variant}" role={variant === "danger" ? "alert" : "status"}>
+    <span class="alert-icon" aria-hidden="true">{icons[variant] ?? "i"}</span>
+    <div class="alert-content">
+      <strong><zb-slot name="heading">{heading}</zb-slot></strong>
+      <div class="alert-text"><zb-slot></zb-slot></div>
+      <div zb-if={actions} class="alert-actions"><zb-slot name="actions"></zb-slot></div>
+    </div>
+    <button zb-if={dismissible} type="button" class="alert-close" aria-label="Dismiss" onclick={close}>×</button>
+  </div>
+</alert-banner>

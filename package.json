@@ -20,17 +20,28 @@
     "./files": "./modules/files/index.js",
     "./catalog": "./modules/catalog/index.js",
     "./cart": "./modules/cart/index.js",
-    "./checkout": "./modules/checkout/index.js"
+    "./checkout": "./modules/checkout/index.js",
+    "./components/*": "./components/*"
   },
   "files": [
     "modules/*/index.js",
+    "components/*.zb",
+    "bin/kit-components.mjs",
     "README.md"
   ],
   "scripts": {
-    "test": "node --test",
+    "test": "node --test 'modules/**/*.test.js' 'bin/**/*.test.js'",
+    "test:browser": "node --test --test-concurrency=1 'components/test/*.test.js'",
     "mutate": "node scripts/mutate.mjs"
   },
   "devDependencies": {
-    "@zubra/sync": "^5.8.0"
+    "@zubra/compiler": "^5.8.0",
+    "@zubra/runtime": "^5.8.0",
+    "@zubra/server": "^5.8.0",
+    "@zubra/sync": "^5.8.0",
+    "playwright": "^1.65.0"
+  },
+  "bin": {
+    "kit-components": "./bin/kit-components.mjs"
   }
 }

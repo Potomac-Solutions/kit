@@ -1,0 +1,93 @@
+<!--
+  A cart: each line with its quantity, price and total, buttons to change it, and the total.
+  `cart` is what `cart.view()` returns; `fees` is a list of `{ label, cents }` to show under the
+  lines (the same ones checkout will add). Changing a line is a plain form post to `change` (the
+  app's route) with `item` and `qty` (0 removes it), so it works without JavaScript. `checkout`
+  is the checkout page's address; the link is off while a line can't be bought.
+  @slot - What to say when the cart is empty.
+-->
+<script>
+  import './action-button.zb'
+  import './empty-state.zb'
+  import './status-badge.zb'
+
+  const money = (cents) => symbol + (cents / 100).toFixed(2)
+  const lines = cart.lines ?? []
+  const fee = fees.reduce((sum, one) => sum + one.cents, 0)
+  const total = (cart.cents ?? 0) + fee
+</script>
+<style>
+  :host { display: block; }
+  section { display: grid; gap: 1rem; padding: 1.1rem 1.2rem; border-radius: var(--radius, 0.5rem); background: var(--card, #fff); box-shadow: 0 0 0 1px var(--border, #dde); }
+  h2 { margin: 0; font-family: var(--font-heading, inherit); font-size: 1.35rem; }
+  ul { display: grid; gap: 0.75rem; margin: 0; padding: 0; list-style: none; }
+  li { display: grid; grid-template-columns: 1fr auto; gap: 0.25rem 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border, #dde); }
+  .name { margin: 0; font-weight: 600; }
+  .each { margin: 0; color: var(--muted-foreground, #667); font-size: 0.9rem; }
+  .total { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+  .qty { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+  .qty form { margin: 0; }
+  .qty output { min-width: 2ch; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+  dl { display: grid; grid-template-columns: 1fr auto; gap: 0.25rem 1rem; margin: 0; font-variant-numeric: tabular-nums; }
+  dt { color: var(--muted-foreground, #667); }
+  dd { margin: 0; text-align: right; }
+  .sum dt, .sum dd { color: inherit; font-weight: 700; font-size: 1.1rem; }
+</style>
+<cart-panel cart={{}} fees={[]} change="" checkout="" symbol="$" heading="Your cart">
+  <section aria-label={heading}>
+    <h2>{heading}</h2>
+    <ul zb-if={lines.length > 0}>
+      <zb-each items={lines} as="line" key={line.item}>
+        <li data-item={line.item}>
+          <div>
+            <p class="name">{line.gone ? 'No longer for sale' : line.name}</p>
+            <p class="each" zb-if={!line.gone}>{money(line.cents)} per {line.unit}</p>
+            <status-badge zb-if={line.short} variant="warning">Only {line.left} left</status-badge>
+            <status-badge zb-if={line.gone} variant="danger">Remove to check out</status-badge>
+          </div>
+          <p class="total">{money(line.total)}</p>
+          <div class="qty" zb-if={change}>
+            <form method="post" action={change}>
+              <input type="hidden" name="item" value={line.item}>
+              <action-button
+                type="submit"
+                variant="outline"
+                size="sm"
+                name="qty"
+                value={String(line.qty - 1)}
+                disabled={line.gone || line.qty <= 1}
+                label={`One fewer ${line.name ?? ''}`}
+              >−</action-button>
+            </form>
+            <output aria-label={`Quantity of ${line.name ?? line.item}`}>{line.qty}</output>
+            <form method="post" action={change}>
+              <input type="hidden" name="item" value={line.item}>
+              <action-button
+                type="submit"
+                variant="outline"
+                size="sm"
+                name="qty"
+                value={String(line.qty + 1)}
+                disabled={line.gone || line.qty >= line.left}
+                label={`One more ${line.name ?? ''}`}
+              >+</action-button>
+            </form>
+            <form method="post" action={change}>
+              <input type="hidden" name="item" value={line.item}>
+              <action-button type="submit" variant="ghost" size="sm" name="qty" value="0">Remove</action-button>
+            </form>
+          </div>
+        </li>
+      </zb-each>
+    </ul>
+    <dl zb-if={lines.length > 0}>
+      <dt>Items</dt><dd>{money(cart.cents ?? 0)}</dd>
+      <zb-each items={fees} as="one" key={one.label}>
+        <dt>{one.label}</dt><dd>{money(one.cents)}</dd>
+      </zb-each>
+      <div class="sum" style="display: contents"><dt>Total</dt><dd>{money(total)}</dd></div>
+    </dl>
+    <action-button zb-if={lines.length > 0 && checkout} href={checkout} disabled={!cart.ready}>Check out</action-button>
+    <empty-state zb-if={lines.length === 0} heading="Your cart is empty"><zb-slot>Add something from the shelves.</zb-slot></empty-state>
+  </section>
+</cart-panel>

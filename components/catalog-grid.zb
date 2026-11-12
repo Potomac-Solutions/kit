@@ -1,0 +1,52 @@
+<!--
+  What's for sale: each item's name, price and what's left, and a button that adds one to the
+  cart. `items` is what `catalog.items()` returns (plus any `seller` name the app adds). Adding is
+  a plain form post to `add` (the app's route), so it works before and without JavaScript; the
+  form sends `item` and `qty`. Without `add`, the grid only shows.
+  Built from Tailgate's market-grid and produce-card, with the farms taken out.
+  @slot - What to say when nothing is for sale.
+-->
+<script>
+  import './action-button.zb'
+  import './empty-state.zb'
+  import './status-badge.zb'
+
+  const money = (cents) => symbol + (cents / 100).toFixed(2)
+</script>
+<style>
+  :host { display: block; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; margin: 0; padding: 0; list-style: none; }
+  article { height: 100%; display: grid; grid-template-rows: auto auto 1fr auto; gap: 0.35rem; padding: 1rem 1.1rem; border-radius: var(--radius, 0.5rem); background: var(--card, #fff); box-shadow: 0 0 0 1px var(--border, #dde); }
+  .seller { margin: 0; font-size: 0.875rem; color: var(--muted-foreground, #667); }
+  h3 { margin: 0; font-family: var(--font-heading, inherit); font-size: 1.25rem; line-height: 1.15; }
+  .price { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem; }
+  .price strong { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+  .price s { color: var(--muted-foreground, #667); font-variant-numeric: tabular-nums; }
+  .price span { color: var(--muted-foreground, #667); }
+  form { margin: 0.4rem 0 0; }
+</style>
+<catalog-grid items={[]} add="" symbol="$" low={3} label="Add to cart">
+  <ul class="grid" zb-if={items.length > 0}>
+    <zb-each items={items} as="item" key={item.key}>
+      <li>
+        <article data-item={item.key}>
+          <p class="seller" zb-if={item.seller}>{item.seller}</p>
+          <h3>{item.name}</h3>
+          <p class="price">
+            <strong>{money(item.cents)}</strong>
+            <s zb-if={item.base && item.base !== item.cents}>{money(item.base)}</s>
+            <span>per {item.unit}</span>
+            <status-badge zb-if={item.left > 0 && item.left <= low} variant="warning">Only {item.left} left</status-badge>
+            <status-badge zb-if={item.left <= 0} variant="neutral">Sold out</status-badge>
+          </p>
+          <form zb-if={add && item.left > 0} method="post" action={add}>
+            <input type="hidden" name="item" value={item.key}>
+            <input type="hidden" name="qty" value="1">
+            <action-button type="submit" label={`${label}: ${item.name}`}>{label}</action-button>
+          </form>
+        </article>
+      </li>
+    </zb-each>
+  </ul>
+  <empty-state zb-if={items.length === 0} heading="Nothing for sale right now"><zb-slot>Check back soon.</zb-slot></empty-state>
+</catalog-grid>

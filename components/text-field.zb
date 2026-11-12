@@ -1,0 +1,52 @@
+<!-- Zubra UI (text-field.zb at journey-to-code-org/zubra-ui 0d2fdd0), carried so the kit's components work from the package. An app's own copy wins. -->
+<!--
+  A labelled text field on a native <input> (or <textarea> with `rows`), so it submits under its
+  `name`, autofills, and validates as the browser's own (`required`, `type="email"`, `minlength`,
+  `pattern`). The message shows after the field is left, or when the form is submitted, and is
+  linked to the field for screen readers. `value` is two-way.
+  @fires valuechange - The text changed; `detail` is the new text.
+-->
+<script>
+  import { id } from '@zubra/runtime'
+
+  const inputId = id()
+  const helpId = id()
+  const errorId = id()
+  let field = null
+  // The browser's own message (or `error`, which wins), shown once the visitor has left the field.
+  let message = ""
+  const shown = error || message
+
+  function check() {
+    message = field ? field.validationMessage : ""
+  }
+  function input(event) {
+    value = event.target.value
+    if (message) check()
+  }
+</script>
+<style>
+  :host { display: block; }
+  .field-stack { display: grid; gap: 0.4rem; }
+  label { font-weight: 600; font-size: 0.925rem; }
+  .field-optional { font-weight: 400; color: color-mix(in oklab, var(--muted-foreground, #71717a) 75%, var(--foreground, #18181b)); }
+  .field-help { margin: 0; font-size: 0.85rem; color: color-mix(in oklab, var(--muted-foreground, #71717a) 75%, var(--foreground, #18181b)); }
+  .field-control { width: 100%; box-sizing: border-box; padding: 0.55rem 0.75rem; border: 1px solid var(--input, #e4e4e7); border-radius: calc(var(--radius, 0.625rem) - 2px); background: var(--background, #fff); color: var(--foreground, #18181b); font: inherit; transition: border-color var(--duration-fast, 150ms), box-shadow var(--duration-fast, 150ms); }
+  textarea.field-control { resize: vertical; min-height: 4.5rem; }
+  .field-control::placeholder { color: var(--muted-foreground, #71717a); }
+  .field-control:focus-visible { outline: none; border-color: var(--ring, #a1a1aa); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring, #a1a1aa) 40%, transparent); }
+  .field-control[aria-invalid=true], .field-control[aria-invalid=true]:focus-visible { border-color: var(--destructive, #dc2626); }
+  .field-control:disabled { opacity: 0.55; cursor: not-allowed; }
+  .field-error { margin: 0; font-size: 0.85rem; color: var(--destructive, #dc2626); }
+  .field-error:empty { display: none; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; animation-iteration-count: 1 !important; } }
+</style>
+<text-field value:model="" label="" description="" error="" name="" type="text" placeholder="" autocomplete="" inputmode="" required={false} disabled={false} readonly={false} minlength={null} maxlength={null} pattern="" rows={0}>
+  <div class="field-stack">
+    <label for={inputId}>{label} <span zb-if={!required} class="field-optional">(optional)</span></label>
+    <p zb-if={description} class="field-help" id={helpId}>{description}</p>
+    <textarea zb-if={rows > 0} ref={field} class="field-control" id={inputId} name={name || null} rows={rows} placeholder={placeholder || null} required={required} disabled={disabled} readonly={readonly} minlength={minlength} maxlength={maxlength} aria-invalid={shown ? "true" : "false"} aria-describedby={[description ? helpId : "", shown ? errorId : ""].join(" ").trim() || null} value={value} oninput={input} onblur={check} oninvalid={check}></textarea>
+    <input zb-else ref={field} class="field-control" id={inputId} name={name || null} type={type} placeholder={placeholder || null} autocomplete={autocomplete || null} inputmode={inputmode || null} required={required} disabled={disabled} readonly={readonly} minlength={minlength} maxlength={maxlength} pattern={pattern || null} aria-invalid={shown ? "true" : "false"} aria-describedby={[description ? helpId : "", shown ? errorId : ""].join(" ").trim() || null} value={value} oninput={input} onblur={check} oninvalid={check}>
+    <p class="field-error" id={errorId} aria-live="polite">{shown}</p>
+  </div>
+</text-field>

@@ -1,0 +1,41 @@
+<!-- Zubra UI (action-button.zb at journey-to-code-org/zubra-ui 0d2fdd0), carried so the kit's components work from the package. An app's own copy wins. -->
+<!--
+  A button in six variants and three sizes, on a native <button>, so it submits forms, takes
+  `type`, and works with the keyboard and screen readers as the browser's own. `loading` keeps its
+  size, shows a spinner, marks it busy and stops it being pressed again. With `href` it's a link
+  that looks like a button (an <a>, so it goes somewhere, opens in a new tab and reads as a link to
+  screen readers); `target` is passed on, and `disabled` takes its `href` away.
+  @slot - The button's text, and an icon if you want one.
+-->
+<style>
+  :host { display: inline-block; }
+  .action-button { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; height: 2.5rem; padding: 0 1rem; border: 1px solid transparent; border-radius: calc(var(--radius, 0.625rem) - 2px); background: var(--primary, #18181b); color: var(--primary-foreground, #fafafa); font: inherit; font-size: 0.925rem; font-weight: 600; line-height: 1; text-decoration: none; white-space: nowrap; cursor: pointer; transition: background var(--duration-fast, 150ms), border-color var(--duration-fast, 150ms), box-shadow var(--duration-fast, 150ms); }
+  .action-button:hover { background: color-mix(in oklab, var(--primary, #18181b) 88%, var(--background, #fff)); }
+  .action-button:focus-visible { outline: 2px solid var(--ring, #a1a1aa); outline-offset: 2px; }
+  .action-button:active { transform: translateY(1px); }
+  .action-secondary { background: var(--secondary, #f4f4f5); color: var(--secondary-foreground, #18181b); }
+  .action-secondary:hover { background: color-mix(in oklab, var(--secondary, #f4f4f5) 85%, var(--foreground, #18181b)); }
+  .action-outline { border-color: var(--border, #e4e4e7); background: var(--background, #fff); color: var(--foreground, #18181b); }
+  .action-outline:hover, .action-ghost:hover { background: var(--accent, #f4f4f5); color: var(--accent-foreground, #18181b); }
+  .action-ghost { background: none; color: var(--foreground, #18181b); }
+  /* Darkened, so white text reads on the lighter reds that dark themes use. */
+  .action-destructive { background: color-mix(in oklab, var(--destructive, #dc2626) 78%, #000); color: #fff; }
+  .action-destructive:hover { background: color-mix(in oklab, var(--destructive, #dc2626) 68%, #000); }
+  .action-link { height: auto; padding: 0; background: none; color: var(--primary, #18181b); text-decoration: underline; text-underline-offset: 3px; }
+  .action-link:hover { background: none; text-decoration-thickness: 2px; }
+  .action-sm { height: 2rem; padding: 0 0.75rem; font-size: 0.85rem; }
+  .action-lg { height: 2.875rem; padding: 0 1.4rem; font-size: 1rem; }
+  .action-link.action-sm, .action-link.action-lg { height: auto; padding: 0; }
+  .action-button[aria-disabled=true], .action-button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+  .action-button[aria-busy=true] { cursor: progress; }
+  .action-spinner { width: 1em; height: 1em; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(1turn); } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; animation-iteration-count: 1 !important; } }
+</style>
+<action-button variant="primary" size="md" type="button" disabled={false} loading={false} name="" value="" label="" href="" target="">
+  <a zb-if={href} class="action-button action-{variant} action-{size}" href={disabled ? null : href} target={target || null} aria-disabled={disabled ? "true" : null} aria-label={label || null}><zb-slot></zb-slot></a>
+  <button zb-else class="action-button action-{variant} action-{size}" type={type} name={name || null} value={value || null} disabled={disabled} aria-disabled={loading ? "true" : null} aria-busy={loading ? "true" : null} aria-label={label || null} onclick={(event) => loading && (event.preventDefault(), event.stopPropagation())}>
+    <span zb-if={loading} class="action-spinner" aria-hidden="true"></span>
+    <zb-slot></zb-slot>
+  </button>
+</action-button>

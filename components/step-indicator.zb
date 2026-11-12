@@ -1,0 +1,32 @@
+<!-- Zubra UI (step-indicator.zb at journey-to-code-org/zubra-ui 0d2fdd0), carried so the kit's components work from the package. An app's own copy wins. -->
+<!--
+  Where a multi-step flow is: steps done (which can be revisited), the current one, and those
+  ahead.
+  @fires stepselect - A finished step was chosen; `detail` is its index.
+-->
+<script>
+  import { emit } from '@zubra/runtime'
+</script>
+<style>
+  ol { display: flex; gap: 0.5rem; margin: 0; padding: 0; list-style: none; counter-reset: step; }
+  li { flex: 1; }
+  button { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.6rem 0.25rem 0.5rem; border: 0; border-top: 3px solid var(--border, #dde); background: none; color: var(--muted-foreground, #667); font: inherit; font-size: 0.875rem; font-weight: 600; text-align: left; }
+  button::before { counter-increment: step; content: counter(step); display: grid; place-items: center; flex: none; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--border, #dde); color: var(--foreground, #111); font-size: 0.75rem; }
+  .done button { border-top-color: var(--primary, #36c); color: var(--foreground, #111); cursor: pointer; }
+  .done button::before { content: "✓"; background: var(--primary, #36c); color: var(--primary-foreground, white); }
+  .current button { border-top-color: var(--primary, #36c); color: var(--primary, #36c); }
+  .current button::before { background: var(--primary, #36c); color: var(--primary-foreground, white); }
+  button:disabled { cursor: default; }
+  @media (max-width: 36rem) { .label { display: none; } }
+</style>
+<step-indicator steps={[]} current={0}>
+  <nav aria-label="Progress">
+    <ol>
+      <zb-each items={steps} as="step" index="index" key={step}>
+        <li class:done={index < current} class:current={index === current}>
+          <button type="button" disabled={index >= current} aria-current={index === current ? "step" : "false"} onclick={() => emit('stepselect', index)}><span class="label">{step}</span></button>
+        </li>
+      </zb-each>
+    </ol>
+  </nav>
+</step-indicator>

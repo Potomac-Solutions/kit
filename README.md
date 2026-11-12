@@ -50,6 +50,44 @@ Features, built from the rules:
 
 Not here yet: `reserve` (next), `forms`.
 
+## Components
+
+`.zb` components in `components/`, on Zubra UI's parts. Each takes plain data as props and posts plain forms to the app's own routes, so it works before and without JavaScript; none reads the store. Themed by Zubra UI's CSS variables, so each business's colours apply.
+
+| Component | Shows | Props | Posts |
+| --- | --- | --- | --- |
+| `catalog-grid` | Items, price (and the price before a rule), what's left, sold out | `items` (`catalog.items()`, plus a `seller` name if you like), `add` | `add`: `item`, `qty=1` |
+| `cart-panel` | Lines, − and +, remove, fees, total; a line that sold out | `cart` (`cart.view()`), `fees`, `change`, `checkout` (a link, off while the cart can't be bought) | `change`: `item`, `qty` (0 removes) |
+| `checkout-form` | The order and total again, who and where, the card | `cart`, `fees`, `place`, `checkout` (the key), `delivery`, `problem`, `test-mode` | `place`: `checkout`, `name`, `email`, `phone`, `address`, `card` |
+| `order-status` | An order's steps, or a side step (cancelled) as a badge; what's in it | `order` (the document `stages` keeps), `steps`, `labels` | nothing |
+
+They carry the six Zubra UI parts they use (`action-button`, `alert-banner`, `empty-state`, `status-badge`, `step-indicator`, `text-field`, from zubra-ui 0d2fdd0, unchanged), so the package works on its own.
+
+### Using them today: copy them in
+
+Zubra 5.8.0 imports components by relative path only, so:
+
+```sh
+npx kit-components add --to src/components      # the four, and any Zubra UI part the app doesn't have
+npx kit-components check --to src/components    # current, changed by the app, or older than the kit
+```
+
+An app that installed its own Zubra UI parts keeps them. Each copy's first line names the kit version.
+
+### Once Zubra releases package components
+
+Zubra `main` has them (#197, merged after the 5.8.0 build). Then the copies go and the app does:
+
+```js
+createZubra({ components, packages: ['@potomac-solutions/kit/components'] });
+```
+
+```html
+<script>import '@potomac-solutions/kit/components/cart-panel.zb'</script>
+```
+
+The browser tests already run the shop this way when the installed Zubra can (`scripts/zubra-main.sh ../zubra` builds Zubra `main` and runs them).
+
 Each module's `index.js` opens with what it does, the documents it writes and the interface it borrows. That comment is the module's documentation.
 
 ## The store
@@ -112,9 +150,14 @@ The order of things inside `place` is what makes it safe: stock is taken and the
 ## Checking it
 
 ```sh
-npm test          # 76 tests, Node's own runner
-npm run mutate    # breaks 43 behaviours one at a time; each must fail a test
+npm test                          # 81 tests, Node's own runner
+npm run mutate                    # breaks 43 behaviours one at a time; each must fail a test
+npm run test:browser              # the components in Chrome, with and without JavaScript (playwright)
+npm run mutate -- --components    # breaks 6 component behaviours; each must fail a browser test
+scripts/zubra-main.sh ../zubra    # the browser tests on Zubra main (unreleased: package components, server id())
 ```
+
+`components/test/shop.js` is the smallest shop the components make (`node components/test/shop.js`, then http://localhost:8040).
 
 `proof/` holds the two patches that move CineStack (at 1c17019) and Tailgate (at fc0f6ae) onto the kit. They are the record of what "proved by" means above, and the starting point when those apps resume.
 
@@ -125,6 +168,8 @@ npm run mutate    # breaks 43 behaviours one at a time; each must fail a test
 - **Tenancy is a lookup, not isolation.** `tenant` says which business a request is for. Keeping one business's documents away from another's is the store's job, and waits on a decision (one Sync log per business).
 - **`auth` uses `node:crypto`,** so it does not run on Workers yet.
 - **A checkout left pending stays pending.** If the server stops between taking stock and hearing from the provider, the stock stays taken and the checkout says `pending`. Nothing sweeps it yet; the provider's own record (keyed by the checkout) says whether money moved.
+- **Without JavaScript on Zubra 5.8.0, checkout's labels aren't tied to their fields.** Zubra UI's `text-field` gets its ids from `id()`, which 5.8.0's server leaves out, so screen readers and `getByLabel` find nothing until JavaScript runs. Fixed on Zubra `main` (#188); the browser test for it skips on 5.8.0.
+- **An app with its own copy of a Zubra UI part, using the kit as a package, ships both.** The first to load defines the tag. Harmless while they match; Zubra has no rule yet for an app tag and a package tag that differ.
 - **Cart and checkout have one app behind them.** Their options are few on purpose until CineStack and a third app use them.
 
 ## Plan
