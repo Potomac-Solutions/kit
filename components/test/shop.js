@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { createZubra } from '@zubra/server';
 import { createSyncServer, memoryLog } from '@zubra/sync/server';
-import { syncStore } from '../../modules/store/index.js';
+import { syncStore, serverOnly, SERVER_ONLY } from '../../modules/store/index.js';
 import { createCatalog } from '../../modules/catalog/index.js';
 import { createCart } from '../../modules/cart/index.js';
 import { createCheckout } from '../../modules/checkout/index.js';
@@ -35,7 +35,7 @@ export async function createShop({ stock = { eggs: 5, beef: 20, honey: 2 } } = {
   symlinkSync(kitRoot, join(app, 'node_modules', '@potomac-solutions', 'kit'), 'dir');
   const zubraOptions = { components, root: app, packages: ['@potomac-solutions/kit/components'], cache: false };
 
-  const sync = createSyncServer({ log: memoryLog() });
+  const sync = createSyncServer({ log: memoryLog(), authorize: serverOnly([...SERVER_ONLY, 'orders']) });
   const store = await syncStore(sync);
   await store.write('items', 'hill/eggs', { name: 'Eggs', unit: 'dozen', cents: 600, left: stock.eggs });
   await store.write('items', 'hill/honey', { name: 'Honey', unit: 'jar', cents: 1200, left: stock.honey });

@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSyncServer, memoryLog } from '@zubra/sync/server';
-import { syncStore, checkStore } from '../index.js';
+import { syncStore, checkStore, serverOnly, SERVER_ONLY } from '../index.js';
 import { market } from '../../checkout/test/market.js';
 
 test('syncStore keeps the store contract', async () => {
@@ -61,4 +61,19 @@ test('a weekend booking over Sync: all or nothing, confirmed in the log', async 
   const again = await syncStore(createSyncServer({ log }));
   for (const day of days) assert.equal(again.get('units', `${day}/k1`).state, 'taken');
   assert.equal(again.get('rentals', 'a').status, 'booked');
+});
+
+test("serverOnly: a page can't push to the kit's collections, the server still writes them", async () => {
+  const sync = createSyncServer({ log: memoryLog(), authorize: serverOnly([...SERVER_ONLY, 'orders']) });
+  const store = await syncStore(sync);
+  const clock = () => `${String(Date.now() + 1).padStart(15, '0')}-00000-page`;
+  const push = (collection) =>
+    sync.fetch(new Request('http://shop.example/_zb/sync/push', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ changes: [{ collection, key: 'a', field: 'x', value: 1, clock: clock() }] }) })).then((r) => r.status);
+  for (const collection of [...SERVER_ONLY, 'orders']) assert.equal(await push(collection), 403, collection);
+  assert.equal(await push('notes'), 200, 'other collections go to next');
+  await store.write('items', 'hill/eggs', { cents: 600 });
+  assert.equal(store.get('items', 'hill/eggs').cents, 600);
+  const strict = serverOnly(SERVER_ONLY, () => false);
+  assert.equal(strict({ kind: 'change', collection: 'notes' }), false, 'next decides the rest');
+  assert.equal(serverOnly()({ kind: 'read', collection: 'items' }), true, 'pages still read');
 });

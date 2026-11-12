@@ -55,3 +55,13 @@ test('bad orders never reach the provider', async () => {
   assert.throws(() => createPay({ store: memoryStore() }), /provider/);
   assert.throws(() => createPay({ provider }), /store/);
 });
+
+test('a paid id asked for again with a different amount is refused, not ok', async () => {
+  const provider = counting();
+  const pay = createPay({ provider, store: memoryStore() });
+  assert.deepEqual(await pay.pay({ id: 'o1', cents: 500 }), { ok: true, ref: 'r1' });
+  assert.deepEqual(await pay.pay({ id: 'o1', cents: 89900 }), { error: 'paid-other-amount' });
+  assert.deepEqual(await pay.pay({ id: 'o1', cents: 500, currency: 'cad' }), { error: 'paid-other-amount' });
+  assert.deepEqual(await pay.pay({ id: 'o1', cents: 500 }), { ok: true, ref: 'r1', again: true });
+  assert.equal(provider.calls.length, 1);
+});

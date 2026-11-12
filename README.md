@@ -94,6 +94,7 @@ const reserve = createReserve({
   base: 4000,                                      // or (unit, pool) => cents
   rules: [{ label: 'Weekend', when: { day: [0, 6] }, set: 5000 }],
   context: (pool) => moment(dayOf(pool), 'America/New_York'),
+  pools: (pool) => offered.includes(pool),         // pools come from the page: say which exist
 });
 
 const days = ['kayaks/2026-11-20', 'kayaks/2026-11-21', 'kayaks/2026-11-22'];
@@ -103,6 +104,9 @@ await reserve.book(guest.pub, key, { method, fields: { phone } });           // 
 
 `book` checks every hold is still live, keeps them through the payment (`payMs`), charges the price shown when they were held, then confirms the units in every pool and starts the booking. A declined card confirms nothing; the holds run out on their own and it can be tried again while they last. CineStack's seats are one pool and a list of seats.
 
+Holds are bounded by default: one holder holds at most 8 units in a pool (`max`), for at most 20 minutes from their first hold (`ceilingMs`), and the payment window can run past that once, by at most `payMs`, so retrying a declined card doesn't keep stock forever. A unit id can't contain `/`. Pass `ceilingMs: 0` or `max: Infinity` only on purpose.
+
+`stages` lets only the record's `owner` advance it, and only along `steps`. Side steps from `from` (cancel, refund), and records with no `owner` option, need the app's own `may({ record, to, by })`: the kit doesn't know who your managers are.
 ## Many businesses on one deployment
 
 Each business gets its own Sync log (a SQLite file here, a Durable Object on Cloudflare), so nothing has to be filtered out of a shared one:
@@ -154,6 +158,13 @@ const answer = await holds.choose(guest.pub, showing.id, { toggle: 'C8' }, { val
 ```
 
 `memoryStore()` is for tests and for apps with nothing to sync. `await syncStore(sync)` is the store over a Zubra Sync server (`createSyncServer`, or a `ZubraSync` Durable Object from inside it), `@zubra/sync` 5.8 or later; the kit is handed the server and imports nothing from Zubra.
+
+**Over Sync, pages must not write the kit's collections.** Sync lets any page push changes to any collection unless `authorize` says otherwise, and every rule here (stock, prices, "charged once", "one winner") assumes only the server writes. Always pass `serverOnly` to the Sync server, with any collection names you chose yourself:
+
+```js
+import { serverOnly, SERVER_ONLY } from '@potomac-solutions/kit/store';
+const sync = createSyncServer({ authorize: serverOnly([...SERVER_ONLY, 'orders']) });
+```
 
 ## A checkout
 
