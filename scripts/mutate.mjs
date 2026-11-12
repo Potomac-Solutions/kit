@@ -76,7 +76,7 @@ for (const [module, what, find, replace] of browser ? components : mutations) {
   writeFileSync(path, source.replace(find, replace));
   let caught;
   try {
-    caught = spawnSync(process.execPath, browser ? ['--test', '--test-concurrency=1', 'components/test/*.test.js'] : ['--test', 'modules/**/*.test.js', 'bin/**/*.test.js'], { cwd: root, encoding: 'utf8' }).status !== 0;
+    caught = spawnSync(process.execPath, browser ? ['--test', '--test-concurrency=1', 'components/test/*.test.js'] : ['--test', 'modules/**/*.test.js'], { cwd: root, encoding: 'utf8' }).status !== 0;
   } finally {
     writeFileSync(path, source);
   }

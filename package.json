@@ -26,22 +26,26 @@
   "files": [
     "modules/*/index.js",
     "components/*.zb",
-    "bin/kit-components.mjs",
     "README.md"
   ],
   "scripts": {
-    "test": "node --test 'modules/**/*.test.js' 'bin/**/*.test.js'",
+    "test": "node --test 'modules/**/*.test.js'",
     "test:browser": "node --test --test-concurrency=1 'components/test/*.test.js'",
     "mutate": "node scripts/mutate.mjs"
   },
   "devDependencies": {
-    "@zubra/compiler": "^5.8.0",
-    "@zubra/runtime": "^5.8.0",
-    "@zubra/server": "^5.8.0",
-    "@zubra/sync": "^5.8.0",
+    "@zubra/compiler": "^5.9.0",
+    "@zubra/runtime": "^5.9.0",
+    "@zubra/server": "^5.9.0",
+    "@zubra/sync": "^5.9.0",
     "playwright": "^1.65.0"
   },
-  "bin": {
-    "kit-components": "./bin/kit-components.mjs"
+  "peerDependencies": {
+    "@zubra/server": ">=5.9.0"
+  },
+  "peerDependenciesMeta": {
+    "@zubra/server": {
+      "optional": true
+    }
   }
 }

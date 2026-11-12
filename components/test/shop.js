@@ -15,7 +15,6 @@ import { createCart } from '../../modules/cart/index.js';
 import { createCheckout } from '../../modules/checkout/index.js';
 import { createPay, testProvider } from '../../modules/pay/index.js';
 import { createStages } from '../../modules/stages/index.js';
-import { add } from '../../bin/kit-components.mjs';
 
 const kitRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const STEPS = ['placed', 'claimed', 'picked', 'delivered'];
@@ -24,31 +23,17 @@ const PROBLEMS = { declined: 'That card was declined. Try another.', 'not-ready'
 const SELLERS = { hill: 'Hillside Farm', vale: 'Vale Beef' };
 const escape = (value) => String(value).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
-/** Whether the installed Zubra imports components from packages (after 5.8.0: #197). */
-export const packagesWork = typeof (await import('@zubra/compiler')).packageFile === 'function';
-
-/** Whether the installed Zubra renders `id()` on the server (after 5.8.0: #188), which ties a text-field's label to its input before JavaScript. */
-export const idsWork = (() => {
-  const zubra = createZubra({ components: kitRoot + '/components', cache: false });
-  return /<label for="/.test(zubra.page().render('text-field', { label: 'x', name: 'x' }));
-})();
-
 /**
- * `mode: 'copy'` puts the kit's components in the app's folder, as `kit-components add` does.
- * `mode: 'package'` leaves them in the kit and has the server read them from node_modules, as an
- * app will once a Zubra release imports components from packages.
+ * The app reads the kit's components from node_modules, as any app on Zubra 5.9 or later does:
+ * `createZubra({ packages: ['@potomac-solutions/kit/components'] })`.
  */
-export async function createShop({ stock = { eggs: 5, beef: 20, honey: 2 }, mode = 'copy' } = {}) {
+export async function createShop({ stock = { eggs: 5, beef: 20, honey: 2 } } = {}) {
   const app = mkdtempSync(join(tmpdir(), 'kit-shop-'));
   const components = join(app, 'components');
   mkdirSync(components);
-  let zubraOptions = { components, cache: false };
-  if (mode === 'copy') add([], components);
-  else {
-    mkdirSync(join(app, 'node_modules', '@potomac-solutions'), { recursive: true });
-    symlinkSync(kitRoot, join(app, 'node_modules', '@potomac-solutions', 'kit'), 'dir');
-    zubraOptions = { ...zubraOptions, root: app, packages: ['@potomac-solutions/kit/components'] };
-  }
+  mkdirSync(join(app, 'node_modules', '@potomac-solutions'), { recursive: true });
+  symlinkSync(kitRoot, join(app, 'node_modules', '@potomac-solutions', 'kit'), 'dir');
+  const zubraOptions = { components, root: app, packages: ['@potomac-solutions/kit/components'], cache: false };
 
   const sync = createSyncServer({ log: memoryLog() });
   const store = await syncStore(sync);

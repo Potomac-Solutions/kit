@@ -1,4 +1,4 @@
-<!-- Zubra UI (action-button.zb at journey-to-code-org/zubra-ui 0d2fdd0), carried so the kit's components work from the package. An app's own copy wins. -->
+<!-- Zubra UI (action-button.zb at journey-to-code-org/zubra-ui 0d2fdd0), carried so the kit's components work from the package. -->
 <!--
   A button in six variants and three sizes, on a native <button>, so it submits forms, takes
   `type`, and works with the keyboard and screen readers as the browser's own. `loading` keeps its

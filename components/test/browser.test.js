@@ -1,11 +1,12 @@
-// The kit's components in a browser, through the test shop, with JavaScript and without:
+// The kit's components in a browser, imported from the package by the test shop, with JavaScript
+// and without:
 // fill a cart from two sellers, change it, check out once, see the orders; a declined card; two
 // devices after the last jar.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { chromium } from 'playwright';
-import { createShop, packagesWork, idsWork } from './shop.js';
+import { createShop } from './shop.js';
 
 let browser;
 const errors = [];
@@ -19,8 +20,8 @@ after(async () => {
   assert.deepEqual(errors, [], 'no page errors');
 });
 
-async function shop(stock, mode = 'copy') {
-  const made = await createShop({ ...(stock ? { stock } : {}), mode });
+async function shop(stock) {
+  const made = await createShop(stock ? { stock } : {});
   await new Promise((done) => made.server.listen(0, done));
   const base = `http://localhost:${made.server.address().port}`;
   return { ...made, base, close: () => new Promise((done) => (made.server.closeAllConnections?.(), made.server.close(done))) };
@@ -29,7 +30,6 @@ async function shop(stock, mode = 'copy') {
 async function device(base, javaScriptEnabled) {
   const context = await browser.newContext({ javaScriptEnabled });
   const page = await context.newPage();
-  if (!javaScriptEnabled) noScript.add(page);
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('response', (response) => response.status() >= 400 && !response.url().endsWith('/favicon.ico') && errors.push(`${response.status()} ${response.url()}`));
   const go = async (path) => {
@@ -40,9 +40,7 @@ async function device(base, javaScriptEnabled) {
 }
 
 const FIELDS = { Name: 'name', Email: 'email', 'Delivery address': 'address', 'Card number': 'card' };
-/** By its label; on a Zubra whose server leaves labels untied (5.8.0) without JavaScript, by its name. */
-const noScript = new WeakSet();
-const field = (page, label) => (idsWork || !noScript.has(page) ? page.getByLabel(label) : page.locator(`checkout-form :is(input, textarea)[name="${FIELDS[label]}"]`));
+const field = (page, label) => page.getByLabel(label);
 const text = (locator) => locator.evaluate((node) => node.innerText.replace(/\s+/g, ' ').trim());
 const addToCart = (page, item) => page.locator(`catalog-grid article[data-item="${item}"] button[type=submit]`).click();
 const line = (page, item) => page.locator(`cart-panel li[data-item="${item}"]`);
@@ -97,6 +95,7 @@ for (const javaScriptEnabled of [true, false]) {
       assert.match(await text(orders.nth(0)), /From Hillside Farm \$10\.00 .*1 dozen Eggs/);
       assert.match(await text(orders.nth(1)), /From Vale Beef \$21\.98 .*2 lb Ground beef/);
       assert.equal(await orders.nth(0).locator('article').getAttribute('data-status'), 'placed');
+      if (javaScriptEnabled) assert.equal(await page.evaluate(() => Boolean(customElements.get('order-status'))), true, 'hydrated from the package');
       assert.equal(s.store.get('items', 'hill/eggs').left, 4);
       assert.equal(s.store.get('items', 'vale/beef').left, 18);
       assert.equal(s.store.under('payments').length, 1, 'one charge for two orders');
@@ -210,32 +209,7 @@ test('the order shows its step as stages move it, and a side step as a badge', a
   }
 });
 
-test('from the package, as an app will import them once Zubra releases package components', { skip: !packagesWork && 'this Zubra has no package components (5.8.0); run against main' }, async () => {
-  for (const javaScriptEnabled of [true, false]) {
-    const s = await shop(null, 'package');
-    const { page, go, context } = await device(s.base, javaScriptEnabled);
-    try {
-      await go('/');
-      await addToCart(page, 'hill/eggs');
-      await page.waitForURL(s.base + '/');
-      assert.equal(await text(line(page, 'hill/eggs').locator('output')), '1');
-      await go('/checkout');
-      await field(page, 'Name').fill('Ada');
-      await field(page, 'Email').fill('ada@example.com');
-      await field(page, 'Delivery address').fill('1 Main St');
-      await field(page, 'Card number').fill('4242');
-      await page.locator('checkout-form button[type=submit]').click();
-      await page.waitForURL(/\/orders\/c-/);
-      assert.match(await text(page.locator('order-status')), /From Hillside Farm \$10\.00/);
-      if (javaScriptEnabled) assert.equal(await page.evaluate(() => Boolean(customElements.get('order-status'))), true, 'hydrated from the package');
-    } finally {
-      await context.close();
-      await s.close();
-    }
-  }
-});
-
-test('without JavaScript, each checkout label names its field', { skip: !idsWork && "this Zubra's server doesn't render id() (5.8.0); run against main" }, async () => {
+test('without JavaScript, each checkout label names its field', async () => {
   const s = await shop();
   const { page, go, context } = await device(s.base, false);
   try {

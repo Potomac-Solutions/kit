@@ -1,4 +1,4 @@
-<!-- Zubra UI (empty-state.zb at journey-to-code-org/zubra-ui 0d2fdd0), carried so the kit's components work from the package. An app's own copy wins. -->
+<!-- Zubra UI (empty-state.zb at journey-to-code-org/zubra-ui 0d2fdd0), carried so the kit's components work from the package. -->
 <!--
   What a list or page shows when there's nothing in it yet: a heading that says what's missing,
   a line on what it's for, and the action that fills it. Turns an empty screen into a next step.

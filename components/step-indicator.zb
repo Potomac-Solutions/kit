@@ -1,4 +1,4 @@
-<!-- Zubra UI (step-indicator.zb at journey-to-code-org/zubra-ui 0d2fdd0), carried so the kit's components work from the package. An app's own copy wins. -->
+<!-- Zubra UI (step-indicator.zb at journey-to-code-org/zubra-ui 0d2fdd0), carried so the kit's components work from the package. -->
 <!--
   Where a multi-step flow is: steps done (which can be revisited), the current one, and those
   ahead.

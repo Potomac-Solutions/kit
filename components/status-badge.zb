@@ -1,4 +1,4 @@
-<!-- Zubra UI (status-badge.zb at journey-to-code-org/zubra-ui 0d2fdd0), carried so the kit's components work from the package. An app's own copy wins. -->
+<!-- Zubra UI (status-badge.zb at journey-to-code-org/zubra-ui 0d2fdd0), carried so the kit's components work from the package. -->
 <!--
   A small label for a status, a count or a category. `variant` is neutral, primary, success,
   warning, danger or outline; `dot` adds a coloured dot before the text. The colour is never the

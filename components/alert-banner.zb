@@ -1,4 +1,4 @@
-<!-- Zubra UI (alert-banner.zb at journey-to-code-org/zubra-ui 0d2fdd0), carried so the kit's components work from the package. An app's own copy wins. -->
+<!-- Zubra UI (alert-banner.zb at journey-to-code-org/zubra-ui 0d2fdd0), carried so the kit's components work from the package. -->
 <!--
   A message in the page: info, success, warning or danger, with an icon, a heading and text. A
   danger alert is announced as soon as it appears (role="alert"); the others politely
