@@ -1,0 +1,54 @@
+<!--
+  Seats, or any units laid out in rows, as buttons: free, yours, held by someone else, taken.
+  `rows` is a list of rows, each a list of `reserve.states()` entries (`{ unit, state }`) or
+  `null` for a gap (an aisle). Pressing a free seat or one of yours is a plain form post to
+  `toggle` (the app's route) with `key` and `toggle` (the seat), so it works without
+  JavaScript; seats held by others and taken seats can't be pressed.
+-->
+<script>
+  const words = { free: 'free', mine: 'yours', held: 'being held', taken: 'taken' }
+</script>
+<style>
+  :host { display: block; }
+  form { display: grid; gap: 0.75rem; justify-items: center; padding: 1.1rem 1.2rem; border-radius: var(--radius, 0.5rem); background: var(--card, #fff); box-shadow: 0 0 0 1px var(--border, #dde); overflow-x: auto; }
+  .screen { width: 70%; padding: 0.2rem; text-align: center; font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted-foreground, #667); border-bottom: 3px solid var(--border, #dde); }
+  .row { display: flex; gap: 0.3rem; }
+  .gap { width: 2.1rem; }
+  button { width: 2.1rem; height: 2.1rem; padding: 0; border: 0; border-radius: 0.45rem 0.45rem 0.2rem 0.2rem; font: inherit; font-size: 0.7rem; cursor: pointer; background: var(--secondary, #e8ecf2); color: var(--secondary-foreground, #223); }
+  button[data-state="mine"] { background: var(--primary, #234); color: var(--primary-foreground, #fff); }
+  button[data-state="held"] { background: var(--warning, #f0d58a); cursor: not-allowed; }
+  button[data-state="taken"] { background: var(--muted, #ccd); color: var(--muted-foreground, #667); cursor: not-allowed; }
+  button:focus-visible { outline: 2px solid var(--ring, #46f); outline-offset: 2px; }
+  dl { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; margin: 0; font-size: 0.85rem; }
+  dt { display: inline-block; width: 0.9rem; height: 0.9rem; border-radius: 0.2rem; vertical-align: middle; }
+  dd { display: inline; margin: 0 0 0 0.3rem; }
+</style>
+<seat-map rows={[]} toggle="" key="" screen="Screen" label="Seats">
+  <form method="post" action={toggle} aria-label={label}>
+    <input type="hidden" name="key" value={key}>
+    <div class="screen" zb-if={screen} aria-hidden="true">{screen}</div>
+    <zb-each items={rows} as="row" index="r">
+      <div class="row">
+        <zb-each items={row} as="seat" index="i">
+          <span zb-if={!seat} class="gap"></span>
+          <button
+            zb-if={seat}
+            type="submit"
+            name="toggle"
+            value={seat.unit}
+            data-state={seat.state}
+            aria-pressed={seat.state === 'mine' ? 'true' : 'false'}
+            aria-label={`Seat ${seat.unit}, ${words[seat.state]}`}
+            disabled={seat.state === 'held' || seat.state === 'taken'}
+          >{seat.unit}</button>
+        </zb-each>
+      </div>
+    </zb-each>
+    <dl>
+      <div><dt style="background: var(--secondary, #e8ecf2)"></dt><dd>Free</dd></div>
+      <div><dt style="background: var(--primary, #234)"></dt><dd>Yours</dd></div>
+      <div><dt style="background: var(--warning, #f0d58a)"></dt><dd>Being held</dd></div>
+      <div><dt style="background: var(--muted, #ccd)"></dt><dd>Taken</dd></div>
+    </dl>
+  </form>
+</seat-map>

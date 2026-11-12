@@ -76,9 +76,33 @@ export function createReserve({
     return null;
   };
 
+  /**
+   * For a picture of one pool (a seat map): each of `units` as `free`, `mine` (held by
+   * `holder`), `held` (by someone else) or `taken`. Plain data for a component.
+   */
+  function states(pool, units, holder = '') {
+    const busy = holds.taken(pool);
+    return [...units].map(String).map((unit) => {
+      const now = busy.get(unit);
+      if (!now) return { unit, state: 'free' };
+      if (now.state === 'held') return { unit, state: holder && now.by === holder ? 'mine' : 'held' };
+      return { unit, state: 'taken' };
+    });
+  }
+
+  /** For a picture of several pools (a day picker): how many of `units` are free in each, and whether `holder` holds any there. */
+  function days(pools, units, holder = '') {
+    return pools.map(String).map((pool) => {
+      const each = states(pool, units, holder);
+      return { pool, free: each.filter((one) => one.state === 'free' || one.state === 'mine').length, mine: each.some((one) => one.state === 'mine') };
+    });
+  }
+
   return {
     quote,
     free,
+    states,
+    days,
 
     /** A booking as it stands, or null. */
     get: (key) => store.get(collection, key),

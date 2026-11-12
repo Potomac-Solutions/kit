@@ -47,7 +47,7 @@ Features, built from the rules:
 | `kit/catalog` | Say what's for sale and how many are left | `store`, `price` | Tailgate's `catalog()` and stock check; `put`, no-limit stock and `active` from the first C1 (#1) | Its own tests, and Tailgate's listing shape through `read`/`left`/`listed` |
 | `kit/cart` | Keep what someone means to buy | `store`, `catalog` | New | Its own tests only |
 | `kit/checkout` | Turn a cart into a paid order, all or nothing | `catalog`, `cart`, `pay`, `stages`, `notify` | Tailgate's `placeOrder`, from one line to many; `quote` from the first C1 (#1) | Its own tests, twelve buyers at once, and over a real Sync server |
-| `kit/reserve` | Book a unit, or several, for a stretch of pools (days, a showing), all or nothing | `hold`, `price`, `pay`, `stages` | CineStack's box office; the multi-pool hold | Its own tests: a kayak Friday to Sunday, the same free kayak every day, a payment that outlasts the hold, and CineStack's seats in its own collections |
+| `kit/reserve` | Book a unit, or several, for a stretch of pools (days, a showing), all or nothing; `states` and `days` for the components | `hold`, `price`, `pay`, `stages` | CineStack's box office; the multi-pool hold | Its own tests: a kayak Friday to Sunday, the same free kayak every day, a payment that outlasts the hold, and CineStack's seats in its own collections |
 
 Not here yet: `forms`.
 
@@ -61,6 +61,11 @@ Not here yet: `forms`.
 | `cart-panel` | Lines, − and +, remove, fees, total; a line that sold out | `cart` (`cart.view()`), `fees`, `change`, `checkout` (a link, off while the cart can't be bought) | `change`: `item`, `qty` (0 removes) |
 | `checkout-form` | The order and total again, who and where, the card | `cart`, `fees`, `place`, `checkout` (the key), `delivery`, `problem`, `test-mode` | `place`: `checkout`, `name`, `email`, `phone`, `address`, `card` |
 | `order-status` | An order's steps, or a side step (cancelled) as a badge; what's in it | `order` (the document `stages` keeps), `steps`, `labels` | nothing |
+| `slot-picker` | Days (or any pools) with how many are free, and how many to hold; a full day can't be picked | `days` (`reserve.days()`, plus a `label`), `hold`, `key`, `count`, `max`, `unit` | `hold`: `key`, each `pool`, `count` |
+| `seat-map` | Seats in rows, with aisles: free, yours, being held, taken | `rows` (lists of `reserve.states()` entries, `null` for an aisle), `toggle`, `key` | `toggle`: `key`, `toggle` (the seat) |
+| `booking-summary` | A held booking: each unit and day priced, the total, how long it's held; Book and Let go. Nothing once it isn't held | `booking` (`reserve.get()`), `labels`, `held-until`, `book`, `release`, `key`, `unit` | `release`: `key` |
+
+A booking is paid with `checkout-form`, its lines given as a cart's (one per unit and day).
 
 They carry the six Zubra UI parts they use (`action-button`, `alert-banner`, `empty-state`, `status-badge`, `step-indicator`, `text-field`, from zubra-ui 0d2fdd0, unchanged), so the package works on its own.
 
@@ -157,13 +162,13 @@ The order of things inside `place` is what makes it safe: stock is taken and the
 ## Checking it
 
 ```sh
-npm test                          # 93 tests, Node's own runner
-npm run mutate                    # breaks 58 behaviours one at a time; each must fail a test
+npm test                          # 94 tests, Node's own runner
+npm run mutate                    # breaks 60 behaviours one at a time; each must fail a test
 npm run test:browser              # the components from the package in Chrome, with and without JavaScript (playwright)
-npm run mutate -- --components    # breaks 8 component behaviours; each must fail a browser test
+npm run mutate -- --components    # breaks 14 component behaviours; each must fail a browser test
 ```
 
-`components/test/shop.js` is the smallest shop the components make (`node components/test/shop.js`, then http://localhost:8040).
+`components/test/shop.js` is the smallest shop the components make (`node components/test/shop.js`, then http://localhost:8040); `components/test/rentals.js` the smallest outfitter and cinema (http://localhost:8041).
 
 `proof/` holds the two patches that move CineStack (at 1c17019) and Tailgate (at fc0f6ae) onto the kit. They are the record of what "proved by" means above, and the starting point when those apps resume.
 
