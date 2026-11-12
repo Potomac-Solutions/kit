@@ -58,6 +58,38 @@ export function createHolds({
   const summary = (list, until, since) => ({ [N.list]: list, until, ...(ceilingMs ? { since } : {}) });
 
   /**
+   * Check one pool's change for a holder, writing nothing: the units they'd hold after it, or why
+   * not. `want` is the whole list they'd hold in that pool.
+   */
+  function plan(holder, pool, want, at, { valid, ms = holdMs, ceiling = true, unit: asked } = {}) {
+    const exists = (unit) => !valid || (typeof valid === 'function' ? valid(unit) : valid.has(unit));
+    for (const unit of want) if (!exists(unit)) return { error: 'unknown', unit, pool };
+    if (want.size > max) return { error: 'limit', max, unit: asked, pool };
+    const all = taken(pool, at);
+    const mine = new Set(mineIn(all, holder));
+    for (const unit of want) {
+      if (!mine.has(unit) && all.has(unit)) return { error: 'taken', unit, pool };
+    }
+    const before = mine.size ? store.get(N.holders, `${pool}/${holder}`) : null;
+    const since = before?.since ?? at;
+    let until = 0;
+    if (want.size) {
+      until = at + ms;
+      if (ceiling && ceilingMs) until = Math.min(until, since + ceilingMs);
+    }
+    return { pool, want, mine, since, until };
+  }
+
+  /** Store a checked plan. Called with nothing awaited since `plan`. */
+  function apply(holder, { pool, want, mine, since, until }) {
+    const writes = [];
+    for (const unit of want) writes.push(store.write(N.units, `${pool}/${unit}`, { state: 'held', by: holder, until }));
+    for (const unit of mine) if (!want.has(unit)) writes.push(store.write(N.units, `${pool}/${unit}`, FREE));
+    writes.push(store.write(N.holders, `${pool}/${holder}`, summary([...want].sort(order), until, want.size ? since : 0)));
+    return writes;
+  }
+
+  /**
    * A holder chooses units. With `toggle`, that one unit is taken or let go. With `units`, the
    * holder's units become exactly that list. All or nothing: if any unit they want has gone,
    * nothing changes. `valid` (a Set, or a function) says which unit ids exist in this pool.
@@ -67,53 +99,66 @@ export function createHolds({
    */
   async function choose(holder, pool, { toggle, units } = {}, { valid } = {}) {
     if (!holder) return { error: 'no-holder' };
-    const exists = (unit) => !valid || (typeof valid === 'function' ? valid(unit) : valid.has(unit));
     const at = now();
-    const all = taken(pool, at);
-    const mine = new Set(mineIn(all, holder));
-
     let want;
     if (toggle !== undefined && toggle !== '') {
       toggle = String(toggle);
-      if (!exists(toggle)) return { error: 'unknown', unit: toggle };
-      want = new Set(mine);
+      want = new Set(mineIn(taken(pool, at), holder));
       if (!want.delete(toggle)) want.add(toggle);
     } else {
       want = new Set((units ?? []).map(String));
-      for (const unit of want) if (!exists(unit)) return { error: 'unknown', unit };
     }
-    if (want.size > max) return { error: 'limit', max, unit: toggle };
-    for (const unit of want) {
-      if (!mine.has(unit) && all.has(unit)) return { error: 'taken', unit };
+    const checked = plan(holder, pool, want, at, { valid, unit: toggle });
+    if (checked.error) {
+      const { pool: _, ...refused } = checked;
+      return refused;
     }
+    await Promise.all(apply(holder, checked));
+    return { ok: true, units: [...want].sort(order), until: checked.until };
+  }
 
-    const before = mine.size ? store.get(N.holders, `${pool}/${holder}`) : null;
-    const since = before?.since ?? at;
-    let until = 0;
-    if (want.size) {
-      until = at + holdMs;
-      if (ceilingMs) until = Math.min(until, since + ceilingMs);
+  /**
+   * The same across several pools at once (a kayak Friday, Saturday and Sunday): `picks` is
+   * `[{ pool, units }]`, each the whole list the holder would hold in that pool. Every pool is
+   * checked before anything is written, so it is all or nothing across them; a refusal names
+   * the pool. `ms` holds for longer than `holdMs` (a payment in progress) and isn't cut by the
+   * ceiling.
+   */
+  async function chooseAcross(holder, picks, { valid, ms } = {}) {
+    if (!holder) return { error: 'no-holder' };
+    if (!picks?.length) return { error: 'nothing' };
+    const at = now();
+    const plans = [];
+    for (const { pool, units } of picks) {
+      const checked = plan(holder, pool, new Set((units ?? []).map(String)), at, { valid: typeof valid === 'function' && valid.length > 1 ? (unit) => valid(unit, pool) : valid, ...(ms ? { ms, ceiling: false } : {}) });
+      if (checked.error) return checked;
+      plans.push(checked);
     }
-
-    const writes = [];
-    for (const unit of want) writes.push(store.write(N.units, `${pool}/${unit}`, { state: 'held', by: holder, until }));
-    for (const unit of mine) if (!want.has(unit)) writes.push(store.write(N.units, `${pool}/${unit}`, FREE));
-    const list = [...want].sort(order);
-    writes.push(store.write(N.holders, `${pool}/${holder}`, summary(list, until, want.size ? since : 0)));
-    await Promise.all(writes);
-    return { ok: true, units: list, until };
+    await Promise.all(plans.flatMap((checked) => apply(holder, checked)));
+    return { ok: true, pools: plans.map(({ pool, want, until }) => ({ pool, units: [...want].sort(order), until })), until: Math.min(...plans.map((checked) => checked.until || Infinity)) };
   }
 
   /** Let go of everything a holder has in a pool. */
   const release = (holder, pool) => choose(holder, pool, { units: [] });
 
-  /** Turn a holder's live holds into taken units (paid for, checked in). They no longer expire. */
-  async function confirm(holder, pool) {
+  /**
+   * Turn a holder's live holds into taken units (paid for, checked in). They no longer expire.
+   * With `units`, only those, and only if every one is still held by this holder; the rest of
+   * their holds in the pool stay held.
+   */
+  async function confirm(holder, pool, units) {
     if (!holder) return { error: 'no-holder' };
-    const mine = held(holder, pool).units;
+    const live = held(holder, pool);
+    let mine = live.units;
+    if (units) {
+      const lost = units.map(String).filter((unit) => !mine.includes(unit));
+      if (lost.length) return { error: 'not-held', units: lost };
+      mine = units.map(String).sort(order);
+    }
     if (!mine.length) return { error: 'nothing-held' };
     const writes = mine.map((unit) => store.write(N.units, `${pool}/${unit}`, { state: N.taken, by: holder, until: 0 }));
-    writes.push(store.write(N.holders, `${pool}/${holder}`, summary([], 0, 0)));
+    const rest = live.units.filter((unit) => !mine.includes(unit));
+    writes.push(store.write(N.holders, `${pool}/${holder}`, summary(rest, rest.length ? live.until : 0, rest.length ? store.get(N.holders, `${pool}/${holder}`)?.since ?? 0 : 0)));
     await Promise.all(writes);
     return { ok: true, units: mine };
   }
@@ -141,5 +186,5 @@ export function createHolds({
   const timer = sweepMs ? setInterval(() => sweep().catch((error) => console.error(error)), sweepMs) : null;
   timer?.unref?.();
 
-  return { holdMs, taken, held, choose, release, confirm, sweep, close: () => clearInterval(timer) };
+  return { holdMs, taken, held, choose, chooseAcross, release, confirm, sweep, close: () => clearInterval(timer) };
 }

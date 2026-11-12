@@ -125,3 +125,59 @@ test('pools are separate', async () => {
   assert.equal((await holds.choose('b', 'sun', { toggle: 'kayak-12' })).ok, true);
   assert.equal(holds.taken('sat').get('kayak-12').by, 'a');
 });
+
+const DAYS = ['kayaks/2026-11-20', 'kayaks/2026-11-21', 'kayaks/2026-11-22'];
+const across = (units) => DAYS.map((pool) => ({ pool, units }));
+
+test('chooseAcross: every pool or none, and a refusal names the pool', async () => {
+  const holds = createHolds({ store: memoryStore() });
+  await holds.choose('bo', DAYS[2], { units: ['k1'] });
+  assert.deepEqual(await holds.chooseAcross('ada', across(['k1'])), { error: 'taken', unit: 'k1', pool: DAYS[2] });
+  assert.equal(holds.taken(DAYS[0]).size, 0, 'Friday was not held either');
+  const answer = await holds.chooseAcross('ada', across(['k2']));
+  assert.equal(answer.ok, true);
+  assert.deepEqual(answer.pools.map((p) => p.units), [['k2'], ['k2'], ['k2']]);
+  assert.deepEqual(DAYS.map((pool) => holds.held('ada', pool).units), [['k2'], ['k2'], ['k2']]);
+});
+
+test('chooseAcross: two holders for the last kayak on overlapping days, exactly one gets it', async () => {
+  const holds = createHolds({ store: memoryStore() });
+  const [ada, bo] = await Promise.all([holds.chooseAcross('ada', across(['k1']).slice(0, 2)), holds.chooseAcross('bo', across(['k1']).slice(1))]);
+  assert.equal([ada, bo].filter((a) => a.ok).length, 1);
+  assert.equal(holds.taken(DAYS[2]).size, 0, 'the loser held nothing, Sunday included');
+});
+
+test('chooseAcross checks units per pool, and refuses nothing to choose and no holder', async () => {
+  const holds = createHolds({ store: memoryStore(), max: 2 });
+  const valid = (unit, pool) => !(pool === DAYS[1] && unit === 'k3');
+  assert.deepEqual(await holds.chooseAcross('ada', across(['k3']), { valid }), { error: 'unknown', unit: 'k3', pool: DAYS[1] });
+  assert.equal((await holds.chooseAcross('ada', across(['k1', 'k2', 'k3']))).error, 'limit');
+  assert.deepEqual(await holds.chooseAcross('ada', []), { error: 'nothing' });
+  assert.deepEqual(await holds.chooseAcross('', across(['k1'])), { error: 'no-holder' });
+});
+
+test('chooseAcross with ms holds longer, past the ceiling', async () => {
+  const now = clock();
+  const holds = createHolds({ store: memoryStore(), holdMs: 60_000, ceilingMs: 90_000, now });
+  await holds.chooseAcross('ada', across(['k1']));
+  now.add(50_000);
+  const normal = await holds.chooseAcross('ada', across(['k1']));
+  assert.equal(normal.until, now() - 50_000 + 90_000, 'the ceiling cuts a normal choice');
+  const paying = await holds.chooseAcross('ada', across(['k1']), { ms: 120_000 });
+  assert.equal(paying.until, now() + 120_000, 'a payment window is not cut');
+});
+
+test('confirm with units takes only those, only while held, and keeps the rest held', async () => {
+  const now = clock();
+  const store = memoryStore();
+  const holds = createHolds({ store, now });
+  await holds.choose('ada', 'show1', { units: ['A1', 'A2', 'A3'] });
+  assert.deepEqual(await holds.confirm('ada', 'show1', ['A1', 'B1']), { error: 'not-held', units: ['B1'] });
+  assert.equal(holds.taken('show1').get('A1').state, 'held', 'nothing confirmed');
+  assert.deepEqual(await holds.confirm('ada', 'show1', ['A2', 'A1']), { ok: true, units: ['A1', 'A2'] });
+  assert.equal(holds.taken('show1').get('A1').state, 'taken');
+  assert.deepEqual(holds.held('ada', 'show1').units, ['A3'], 'the rest stay held');
+  assert.deepEqual(store.get('holds', 'show1/ada').units, ['A3'], "the holder's summary still lists the rest");
+  now.add(holds.holdMs);
+  assert.deepEqual(await holds.confirm('ada', 'show1', ['A3']), { error: 'not-held', units: ['A3'] }, 'a lapsed hold cannot be confirmed');
+});

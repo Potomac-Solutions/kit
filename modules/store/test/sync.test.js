@@ -43,3 +43,22 @@ test('a checkout over Sync: one winner of the last dozen, and the orders are in 
   const again = await syncStore(createSyncServer({ log }));
   assert.equal(again.get('orders', 'a/hill').owner, 'ada');
 });
+
+test('a weekend booking over Sync: all or nothing, confirmed in the log', async () => {
+  const { createHolds } = await import('../../hold/index.js');
+  const { createPay, testProvider } = await import('../../pay/index.js');
+  const { createStages } = await import('../../stages/index.js');
+  const { createReserve } = await import('../../reserve/index.js');
+  const log = memoryLog();
+  const store = await syncStore(createSyncServer({ log }));
+  const holds = createHolds({ store });
+  const reserve = createReserve({ store, holds, pay: createPay({ provider: testProvider(), store }), stages: createStages({ store, collection: 'rentals', steps: ['booked', 'out', 'returned'], stamp: false }), base: 4000 });
+  const days = ['kayaks/2026-11-20', 'kayaks/2026-11-21', 'kayaks/2026-11-22'];
+  const [ada, bo] = await Promise.all([reserve.hold('ada', { key: 'a', pools: days, count: 1, from: ['k1'] }), reserve.hold('bo', { key: 'b', pools: days.slice(2), count: 1, from: ['k1'] })]);
+  assert.equal(ada.ok, true);
+  assert.deepEqual(bo, { error: 'none-free', left: 0 });
+  assert.equal((await reserve.book('ada', 'a', { method: { card: '4242' } })).ok, true);
+  const again = await syncStore(createSyncServer({ log }));
+  for (const day of days) assert.equal(again.get('units', `${day}/k1`).state, 'taken');
+  assert.equal(again.get('rentals', 'a').status, 'booked');
+});
