@@ -1,0 +1,31 @@
+<!-- Zubra UI (empty-state.zb at journey-to-code-org/zubra-ui 0d2fdd0), carried so the kit's components work from the package. -->
+<!--
+  What a list or page shows when there's nothing in it yet: a heading that says what's missing,
+  a line on what it's for, and the action that fills it. Turns an empty screen into a next step.
+  @slot - The line under the heading.
+  @slot heading - The heading (defaults to `heading`).
+  @slot actions - The button or link that fills it.
+  @slot icon - A small picture above the heading (defaults to a simple outline).
+-->
+<script>
+  import { hasSlot } from '@zubra/runtime'
+
+  const actions = hasSlot('actions')
+</script>
+<style>
+  :host { display: block; }
+  .empty { display: grid; justify-items: center; gap: 0.6rem; padding: 2.5rem 1.5rem; border: 1px dashed var(--border, #e4e4e7); border-radius: var(--radius, 0.625rem); text-align: center; }
+  .empty-icon { display: grid; place-items: center; width: 3rem; height: 3rem; border-radius: calc(var(--radius, 0.625rem) * 1.2); background: var(--muted, #f4f4f5); color: color-mix(in oklab, var(--muted-foreground, #71717a) 75%, var(--foreground, #18181b)); }
+  .empty-default { width: 1.4rem; height: 1.1rem; border: 2px solid currentColor; border-radius: 0.25rem; box-shadow: inset 0 0.35rem 0 -0.15rem currentColor; }
+  h3 { margin: 0.25rem 0 0; font-size: 1.05rem; }
+  .empty-text { max-width: 32ch; color: color-mix(in oklab, var(--muted-foreground, #71717a) 75%, var(--foreground, #18181b)); }
+  .empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; margin-top: 0.4rem; }
+</style>
+<empty-state heading="Nothing here yet">
+  <div class="empty">
+    <div class="empty-icon" aria-hidden="true"><zb-slot name="icon"><span class="empty-default"></span></zb-slot></div>
+    <h3><zb-slot name="heading">{heading}</zb-slot></h3>
+    <div class="empty-text"><zb-slot></zb-slot></div>
+    <div zb-if={actions} class="empty-actions"><zb-slot name="actions"></zb-slot></div>
+  </div>
+</empty-state>
