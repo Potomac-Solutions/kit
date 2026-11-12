@@ -1,0 +1,102 @@
+<!--
+  Checkout: what's being bought and the total again, who it's for, where it goes, and how it's
+  paid. A plain form post to `place` (the app's route), so it works without JavaScript. It sends
+  `checkout` (the key the app made when it rendered the page, so a second press is the same
+  checkout), `name`, `email`, `phone`, `address` (when `delivery`) and `card`.
+  `cart` is what `cart.view()` returns, `fees` the list checkout adds, `problem` what the app
+  wants said after a refused try (a declined card, something that sold out).
+  With `test-mode` the card field says no money moves (kit/pay's test provider).
+-->
+<script>
+  import './action-button.zb'
+  import './alert-banner.zb'
+  import './text-field.zb'
+
+  const money = (cents) => symbol + (cents / 100).toFixed(2)
+  const lines = cart.lines ?? []
+  const fee = fees.reduce((sum, one) => sum + one.cents, 0)
+  const total = (cart.cents ?? 0) + fee
+</script>
+<style>
+  :host { display: block; }
+  form { display: grid; gap: 1.25rem; }
+  fieldset { display: grid; gap: 0.9rem; margin: 0; padding: 1.1rem 1.2rem; border: 0; border-radius: var(--radius, 0.5rem); background: var(--card, #fff); box-shadow: 0 0 0 1px var(--border, #dde); }
+  legend { float: left; width: 100%; padding: 0; margin-bottom: 0.25rem; font-family: var(--font-heading, inherit); font-size: 1.2rem; font-weight: 700; }
+  dl { display: grid; grid-template-columns: 1fr auto; gap: 0.3rem 1rem; margin: 0; font-variant-numeric: tabular-nums; }
+  dt { color: var(--muted-foreground, #667); }
+  dd { margin: 0; text-align: right; }
+  .sum { font-weight: 700; font-size: 1.1rem; color: inherit; }
+  .note { margin: 0; color: var(--muted-foreground, #667); font-size: 0.9rem; }
+</style>
+<checkout-form
+  cart={{}}
+  fees={[]}
+  place=""
+  checkout=""
+  delivery={false}
+  problem=""
+  test-mode={false}
+  symbol="$"
+  name=""
+  email=""
+  phone=""
+  address=""
+>
+  <form method="post" action={place}>
+    <input type="hidden" name="checkout" value={checkout}>
+    <alert-banner zb-if={problem} variant="danger">{problem}</alert-banner>
+    <fieldset>
+      <legend>Your order</legend>
+      <dl>
+        <zb-each items={lines} as="line" key={line.item}>
+          <dt>{line.qty} × {line.name ?? line.item}</dt><dd>{money(line.total)}</dd>
+        </zb-each>
+        <zb-each items={fees} as="one" key={one.label}>
+          <dt>{one.label}</dt><dd>{money(one.cents)}</dd>
+        </zb-each>
+        <dt class="sum">Total</dt><dd class="sum">{money(total)}</dd>
+      </dl>
+    </fieldset>
+    <fieldset>
+      <legend>{delivery ? 'Who and where' : 'Who it’s for'}</legend>
+      <text-field label="Name" name="name" autocomplete="name" required value={name}></text-field>
+      <text-field
+        label="Email"
+        name="email"
+        type="email"
+        autocomplete="email"
+        required
+        value={email}
+      ></text-field>
+      <text-field
+        label="Phone"
+        name="phone"
+        type="tel"
+        autocomplete="tel"
+        value={phone}
+        description="For a text when it’s ready."
+      ></text-field>
+      <text-field
+        zb-if={delivery}
+        label="Delivery address"
+        name="address"
+        autocomplete="street-address"
+        rows={2}
+        required
+        value={address}
+      ></text-field>
+    </fieldset>
+    <fieldset>
+      <legend>Payment</legend>
+      <p class="note" zb-if={testMode}>Test mode: no money moves. Any card number works except 4000 0000 0000 0002, which is declined.</p>
+      <text-field
+        label="Card number"
+        name="card"
+        autocomplete="cc-number"
+        inputmode="numeric"
+        required
+      ></text-field>
+    </fieldset>
+    <action-button type="submit" size="lg" disabled={!cart.ready}>Place order · {money(total)}</action-button>
+  </form>
+</checkout-form>

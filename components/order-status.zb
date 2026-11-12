@@ -1,0 +1,43 @@
+<!--
+  An order's steps and what's in it. Read only. `order` is the order document as `stages` keeps
+  it (`lines`, `cents`, `fee`, and the step in `status`); `steps` are the stages' step names in
+  order and `labels` the words for them. A step outside `steps` (cancelled, refunded) shows as a
+  badge with its label. The last step reached marks every step done.
+  For a live page, the app passes a fresh `order` (a Sync collection in its own component).
+-->
+<script>
+  import './step-indicator.zb'
+  import './status-badge.zb'
+
+  const money = (cents) => symbol + (cents / 100).toFixed(2)
+  const status = order[field] ?? ''
+  const at = steps.indexOf(status)
+  const reached = at === steps.length - 1 ? steps.length : at
+  const words = steps.map((step) => labels[step] ?? step)
+  const lines = order.lines ?? []
+  const total = (order.cents ?? 0) + (order.fee ?? 0)
+</script>
+<style>
+  :host { display: block; }
+  article { display: grid; gap: 0.75rem; padding: 1rem 1.15rem; border-radius: var(--radius, 0.5rem); background: var(--card, #fff); box-shadow: 0 0 0 1px var(--border, #dde); }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+  h3 { margin: 0; font-size: 1.1rem; }
+  .total { font-weight: 700; font-variant-numeric: tabular-nums; }
+  ul { margin: 0; padding: 0 0 0 1.1rem; color: var(--muted-foreground, #667); }
+  step-indicator { display: block; }
+</style>
+<order-status order={{}} steps={[]} labels={{}} field="status" heading="Your order" symbol="$">
+  <article data-status={status}>
+    <header>
+      <h3>{heading}</h3>
+      <span class="total">{money(total)}</span>
+    </header>
+    <step-indicator zb-if={at >= 0} steps={words} current={reached}></step-indicator>
+    <status-badge zb-if={at < 0 && status} variant="danger">{labels[status] ?? status}</status-badge>
+    <ul>
+      <zb-each items={lines} as="line" key={line.item}>
+        <li>{line.qty} {line.unit === 'each' ? '×' : line.unit} {line.name}</li>
+      </zb-each>
+    </ul>
+  </article>
+</order-status>

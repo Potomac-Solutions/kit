@@ -1,0 +1,22 @@
+<!-- Zubra UI (status-badge.zb at journey-to-code-org/zubra-ui 0d2fdd0), carried so the kit's components work from the package. -->
+<!--
+  A small label for a status, a count or a category. `variant` is neutral, primary, success,
+  warning, danger or outline; `dot` adds a coloured dot before the text. The colour is never the
+  only signal: the text says it.
+  @slot - The badge's text.
+-->
+<style>
+  :host { display: inline-block; vertical-align: middle; }
+  span { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.15rem 0.55rem; border: 1px solid transparent; border-radius: 999px; background: var(--secondary, #f4f4f5); color: var(--secondary-foreground, #18181b); font-size: 0.775rem; font-weight: 600; line-height: 1.4; white-space: nowrap; }
+  .badge-primary { background: var(--primary, #18181b); color: var(--primary-foreground, #fafafa); }
+  /* Each tone's text is mixed toward the foreground, so it reads on light and dark themes alike. */
+  .badge-success, .badge-warning, .badge-danger { background: color-mix(in oklab, var(--tone) 16%, var(--background, #fff)); color: color-mix(in oklab, var(--tone) 50%, var(--foreground, #18181b)); }
+  .badge-success { --tone: oklch(0.6 0.15 150); }
+  .badge-warning { --tone: oklch(0.68 0.15 70); }
+  .badge-danger { --tone: var(--destructive, #dc2626); }
+  .badge-outline { border-color: var(--border, #e4e4e7); background: none; color: var(--foreground, #18181b); }
+  .badge-dot::before { content: ""; width: 0.45rem; height: 0.45rem; border-radius: 50%; background: currentColor; }
+</style>
+<status-badge variant="neutral" dot={false}>
+  <span class="badge-{variant}" class:badge-dot={dot}><zb-slot></zb-slot></span>
+</status-badge>
