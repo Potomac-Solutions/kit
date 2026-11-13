@@ -90,7 +90,8 @@ ${note(url)}
 
   /** The line at the top of a staff page: who's signed in, and their links. */
   const bar = (who) =>
-    `<p class="hint">Signed in as ${escape(who.name)}${staff.can(who, 'owner') ? ` · <a href="${at('/people')}">People</a>` : ''} · <a href="${at('/password')}">Your password</a> · <form class="inline" method="post" action="${at('/sign-out')}"><button class="button light" type="submit">Sign out</button></form></p>`;
+    // A <div>, not a <p>: a form inside a paragraph ends it, and the sign-out button lands on a line of its own.
+    `<div class="hint">Signed in as ${escape(who.name)}${staff.can(who, 'owner') ? ` · <a href="${at('/people')}">People</a>` : ''} · <a href="${at('/password')}">Your password</a> · <form class="inline" method="post" action="${at('/sign-out')}"><button class="button light" type="submit">Sign out</button></form></div>`;
 
   /**
    * Answer the staff account routes. True when it answered; false for anything else (the app's
