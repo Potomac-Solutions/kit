@@ -117,7 +117,7 @@ import { createTenancy } from '@potomac-solutions/kit/tenancy';
 
 const tenancy = createTenancy({
   tenants: createTenants({ tenants }),                      // { id, hosts, theme, modules }
-  open: async (tenant) => createSyncServer({ log: await sqliteLog(`data/${tenant.id}.db`) }),
+  open: async (tenant) => createSyncServer({ log: await sqliteLog(`data/${tenant.id}.db`), authorize: serverOnly() }),
   setup: ({ store }) => ({ catalog: createCatalog({ store }), holds: createHolds({ store }) }),
 });
 

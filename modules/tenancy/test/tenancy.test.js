@@ -13,6 +13,7 @@ import { createTenants } from '../../tenant/index.js';
 import { createCatalog } from '../../catalog/index.js';
 import { createHolds } from '../../hold/index.js';
 import { createTenancy } from '../index.js';
+import { serverOnly } from '../../store/index.js';
 
 const TENANTS = [
   { id: 'hillside', name: 'Hillside Farm', hosts: ['hillside.test'] },
@@ -28,7 +29,8 @@ async function deployment({ open } = {}) {
       open ??
       (async (tenant) => {
         opened.push(tenant.id);
-        return createSyncServer({ log: await sqliteLog(join(dir, `${tenant.id}.db`)) });
+        // Pages may write their own notes; the kit's collections are the server's (`serverOnly`).
+        return createSyncServer({ log: await sqliteLog(join(dir, `${tenant.id}.db`)), authorize: serverOnly() });
       }),
     setup: ({ store }) => ({ catalog: createCatalog({ store }), holds: createHolds({ store }) }),
   });
@@ -109,6 +111,9 @@ test("a page's push lands in its own business only", async () => {
     assert.equal(push.status, 200);
     assert.equal((await d.tenancy.space('garrett8.test')).store.get('notes', 'n1').text, 'popcorn');
     assert.equal((await d.tenancy.space('hillside.test')).store.get('notes', 'n1'), null);
+    // The kit's own collections (stock, holds) stay the server's.
+    const items = await d.ask('garrett8.test', '/_zb/sync/push', { method: 'POST', body: { changes: [{ collection: 'items', key: 'popcorn', field: 'left', value: 999, clock: clock(2) }] } });
+    assert.equal(items.status, 403);
     assert.deepEqual((await d.ask('hillside.test', '/_zb/sync/pull?since=0')).json.changes, []);
   } finally {
     await d.close();
