@@ -37,7 +37,7 @@ Each layer imports only from the layers below it.
 | `kit/price` | Turn an item and a context into a price | New | Its own tests only |
 | `kit/pay` | Collect money for an order | New (`pay(order)` from the CineStack plan) | Its own tests only |
 | `kit/auth` | Say who is asking | Both apps' `src/session.js` | Its own tests only |
-| `kit/staff` | The people who run a business: an owner, the staff they invite, passwords, sessions that can be ended, roles | New: every platform faked it with a "sign in on any device" button | Its own tests, attacks included; 24 mutations |
+| `kit/staff` | The people who run a business: an owner, the staff they invite, passwords, sessions that can be ended, roles | New: every platform faked it with a "sign in on any device" button | Its own tests, attacks included; 25 mutations |
 | `kit/notify` | Tell a person something | New, interface and an outbox | Its own tests only |
 | `kit/files` | Keep a file and return its address | New, interface, memory and disk | Its own tests only |
 | `kit/store` | The seam to where documents live (below) | Both apps | Both apps' tests; `syncStore` on `@zubra/sync` 5.8 |
@@ -241,6 +241,7 @@ Pages that show a link token (`/staff/accept?token=…`) should send `Referrer-P
 - **The sweep reads every unit document.** Fine for one theatre's evening; needs an index on `until` beyond that.
 - **`auth` and `staff` use `node:crypto`,** so they do not run on Workers yet.
 - **Staff lockouts are kept in the process.** They reset when it restarts, and several processes count apart. Anyone who knows an owner's email can lock it for 15 minutes by failing five times; the owner can still be signed in elsewhere, and a reset link still works.
+- **Nothing limits sign-in attempts per address.** Each one costs a password hash (about 50 ms of CPU at the default cost), so a flood is a load problem: put a rate limit in front of the sign-in route (the platform's proxy, or the app). The lockout counts per email, and forgets expired ones once it remembers 10,000.
 - **The kit sends no email.** An invite or reset is a link the owner passes on (or the app sends with `notify`). No two-factor sign-in yet.
 - **A checkout left pending stays pending.** If the server stops between taking stock and hearing from the provider, the stock stays taken and the checkout says `pending`. Nothing sweeps it yet; the provider's own record (keyed by the checkout) says whether money moved.
 - **An app with its own copy of a Zubra UI part, using the kit as a package, ships both.** The first to load defines the tag. Harmless while they match; Zubra has no rule yet for an app tag and a package tag that differ.

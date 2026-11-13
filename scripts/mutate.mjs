@@ -110,6 +110,7 @@ const mutations = [
   ['staff', "the key comparison", "actual.length === expected.length && timingSafeEqual(actual, expected)", "true"],
   ['staff', "the cookie is HttpOnly", "; Path=/; HttpOnly; SameSite=Lax", "; Path=/; SameSite=Lax"],
   ['staff', "__Host- over https", "secure ? `__Host-${name}` : name", "name"],
+  ['staff', 'the lockout forgets expired emails', 'if (failures.size >= 10_000) for', 'if (false) for'],
   ['staff', "emails are compared lower-case", "String(email ?? '').trim().toLowerCase()", "String(email ?? '').trim()"],
 ];
 

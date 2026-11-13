@@ -249,3 +249,13 @@ test('password hashes: salted, checked in constant time, cost kept with the hash
   // Unicode is compared after NFKC, so the same password typed two ways matches.
   assert.equal(await checkPassword('café au lait', await hashPassword('café au lait', cost)), true);
 });
+
+test('a flood of made-up emails doesn’t keep growing what the lockout remembers', async () => {
+  const now = clock();
+  const { staff } = await business({ now, lockMs: 1000, cost: { N: 2 ** 4, r: 1, p: 1 } });
+  for (let i = 0; i < 10_000; i++) await staff.signIn(`ghost${i}@example.com`, 'whatever xx');
+  assert.equal(staff.remembered(), 10_000);
+  now.add(1001);
+  await staff.signIn('another@example.com', 'whatever xx');
+  assert.equal(staff.remembered(), 1, 'the expired ones were forgotten');
+});

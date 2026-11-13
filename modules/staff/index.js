@@ -142,6 +142,9 @@ export function createStaff({
     cookieName,
     roles: [...roles],
 
+    /** How many emails the lockout is counting failures for (for monitoring a flood). */
+    remembered: () => failures.size,
+
     /** Whether the business has nobody yet: the setup link is offered only then. */
     needsOwner: () => accounts().length === 0,
 
@@ -171,6 +174,8 @@ export function createStaff({
       const ok = (await checkPassword(String(password ?? ''), account?.hash ?? (await decoy))) && Boolean(account) && !account.disabled;
       if (!ok) {
         const count = failed && failed.until > now() ? failed.count + 1 : 1;
+        // Made-up emails would grow this forever: past a size, forget the ones whose time is up.
+        if (failures.size >= 10_000) for (const [key, entry] of failures) if (entry.until <= now()) failures.delete(key);
         failures.set(email, { count, until: now() + lockMs });
         return count >= tries ? { error: 'locked', until: now() + lockMs } : { error: 'wrong' };
       }
