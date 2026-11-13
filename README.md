@@ -2,7 +2,7 @@
 
 Shared server modules for Potomac Solutions' platforms (Tailgate, CineStack, Outfitter and the rest). Built to sit on [Zubra](https://github.com/journey-to-code-org/zubra): `@zubra/server`, `@zubra/actions`, `@zubra/sync` and Zubra UI.
 
-Private. The name is a placeholder. Version 0.4.0: no dependencies, Node 22.13 or later.
+Private. The name is a placeholder. Version 0.5.0: no dependencies, Node 22.13 or later.
 
 ## What belongs here
 
@@ -30,7 +30,7 @@ Each layer imports only from the layers below it.
 
 | Import | Its one job | From | Proved by |
 | --- | --- | --- | --- |
-| `kit/hold` | Reserve one contested thing for a window of time; `chooseAcross` for several pools at once, all or nothing | CineStack `src/box-office.js` | CineStack's 5 browser tests, unchanged |
+| `kit/hold` | Reserve one contested thing for a window of time; `chooseAcross` for several pools at once, all or nothing; `free` gives a holder's taken units back (a cancelled booking) | CineStack `src/box-office.js` | CineStack's 5 browser tests, unchanged |
 | `kit/stages` | Move a record through named steps | Tailgate `src/market.js` | Tailgate's 9 browser tests |
 | `kit/tenant` | Say which business a request is for | New | Its own tests only |
 | `kit/tenancy` | Keep each business's documents apart: one Sync log each, its sync traffic routed by host | New | Two businesses on one HTTP server, a SQLite file each: pull, push and the live stream |
