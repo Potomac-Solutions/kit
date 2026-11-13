@@ -2,7 +2,7 @@
 
 Shared server modules for Potomac Solutions' platforms (Tailgate, CineStack, Outfitter and the rest). Built to sit on [Zubra](https://github.com/journey-to-code-org/zubra): `@zubra/server`, `@zubra/actions`, `@zubra/sync` and Zubra UI.
 
-Private. The name is a placeholder. Version 0.5.0: no dependencies, Node 22.13 or later.
+Private. The name is a placeholder. Version 0.6.0: no dependencies, Node 22.13 or later.
 
 ## What belongs here
 
@@ -37,6 +37,7 @@ Each layer imports only from the layers below it.
 | `kit/price` | Turn an item and a context into a price | New | Its own tests only |
 | `kit/pay` | Collect money for an order | New (`pay(order)` from the CineStack plan) | Its own tests only |
 | `kit/auth` | Say who is asking | Both apps' `src/session.js` | Its own tests only |
+| `kit/staff` | The people who run a business: an owner, the staff they invite, passwords, sessions that can be ended, roles | New: every platform faked it with a "sign in on any device" button | Its own tests, attacks included; 25 mutations |
 | `kit/notify` | Tell a person something | New, interface and an outbox | Its own tests only |
 | `kit/files` | Keep a file and return its address | New, interface, memory and disk | Its own tests only |
 | `kit/store` | The seam to where documents live (below) | Both apps | Both apps' tests; `syncStore` on `@zubra/sync` 5.8 |
@@ -205,6 +206,32 @@ npm run mutate -- --components    # breaks 14 component behaviours; each must fa
 
 `proof/` holds the two patches that move CineStack (at 1c17019) and Tailgate (at fc0f6ae) onto the kit. They are the record of what "proved by" means above, and the starting point when those apps resume.
 
+## Staff accounts
+
+`kit/staff` keeps a business's people in its own log, in collections no page can read or write: `serverOnly` refuses them whatever a scope says.
+
+```js
+import { createStaff } from '@potomac-solutions/kit/staff';
+
+const staff = createStaff({ store, roles: ['owner', 'staff'], secure: production });
+
+if (staff.needsOwner()) console.log(`Set up the first owner: ${origin}/staff/accept?token=${await staff.setup()}`);
+const who = staff.session(req);                         // { account, name, email, roles } | null
+if (!staff.can(who, 'staff')) return redirect('/staff/sign-in');
+
+await staff.signIn(email, password);                    // { ok, cookie } | { error: 'wrong' | 'locked' }
+await staff.invite(who, { email, roles: ['staff'] });   // { ok, token }: send them /staff/accept?token=…
+await staff.accept(token, { name, password });          // makes the account (or sets a new password), signs in
+```
+
+- **Passwords:** scrypt, salted, the cost kept with the hash; at least 10 characters, not the email.
+- **Sign-in:** one answer (`wrong`) for an unknown email and a wrong password, and the same work for both, so neither the answer nor the time says whether an email has an account. Five failures lock an email for 15 minutes.
+- **Sessions:** a fresh random id at every sign-in, so one can't be planted. Only its hash is stored. `HttpOnly`, `SameSite=Lax`, and `__Host-` with `Secure` over https. They end on sign-out, on a password change or reset (the others), and when an owner turns the account off.
+- **Links:** invites, resets and the first owner's setup link are one-time tokens that expire, stored as hashes. The setup link works only while the business has nobody. Two links used at the same moment can't make two accounts for one email, or two first owners.
+- **Roles:** an owner can do everything, and the business always keeps one. Owner actions check the account as stored, not the roles a session claims.
+
+Pages that show a link token (`/staff/accept?token=…`) should send `Referrer-Policy: no-referrer`, so the token doesn't leave in a `Referer` header.
+
 ## Known limits
 
 - **`tenancy` holds each business's log in one process.** Several processes serving one business need a shared log and pub/sub between them (Zubra Sync's own note); on Cloudflare, one Durable Object per business does that.
@@ -212,8 +239,10 @@ npm run mutate -- --components    # breaks 14 component behaviours; each must fa
 - **A holder holds one list per pool.** Two drafts of `reserve` by the same person in the same pool share it, so the second replaces the first there.
 - **A payment that outlives `payMs` (2 minutes by default) is paid but not booked.** `book` answers `lapsed-after-payment` with the provider's `ref`, so the app can refund; the kit doesn't refund.
 - **The sweep reads every unit document.** Fine for one theatre's evening; needs an index on `until` beyond that.
-- **Tenancy is a lookup, not isolation.** `tenant` says which business a request is for. Keeping one business's documents away from another's is the store's job, and waits on a decision (one Sync log per business).
-- **`auth` uses `node:crypto`,** so it does not run on Workers yet.
+- **`auth` and `staff` use `node:crypto`,** so they do not run on Workers yet.
+- **Staff lockouts are kept in the process.** They reset when it restarts, and several processes count apart. Anyone who knows an owner's email can lock it for 15 minutes by failing five times; the owner can still be signed in elsewhere, and a reset link still works.
+- **Nothing limits sign-in attempts per address.** Each one costs a password hash (about 50 ms of CPU at the default cost), so a flood is a load problem: put a rate limit in front of the sign-in route (the platform's proxy, or the app). The lockout counts per email, and forgets expired ones once it remembers 10,000.
+- **The kit sends no email.** An invite or reset is a link the owner passes on (or the app sends with `notify`). No two-factor sign-in yet.
 - **A checkout left pending stays pending.** If the server stops between taking stock and hearing from the provider, the stock stays taken and the checkout says `pending`. Nothing sweeps it yet; the provider's own record (keyed by the checkout) says whether money moved.
 - **An app with its own copy of a Zubra UI part, using the kit as a package, ships both.** The first to load defines the tag. Harmless while they match; Zubra has no rule yet for an app tag and a package tag that differ.
 - **Cart and checkout have one app behind them.** Their options are few on purpose until CineStack and a third app use them.
