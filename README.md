@@ -2,7 +2,7 @@
 
 Shared server modules for Potomac Solutions' platforms (Tailgate, CineStack, Outfitter and the rest). Built to sit on [Zubra](https://github.com/journey-to-code-org/zubra): `@zubra/server`, `@zubra/actions`, `@zubra/sync` and Zubra UI.
 
-Private. The name is a placeholder. Version 0.6.0: no dependencies, Node 22.13 or later.
+Private. The name is a placeholder. Version 0.7.0: no dependencies, Node 22.13 or later.
 
 ## What belongs here
 
@@ -37,7 +37,7 @@ Each layer imports only from the layers below it.
 | `kit/price` | Turn an item and a context into a price | New | Its own tests only |
 | `kit/pay` | Collect money for an order | New (`pay(order)` from the CineStack plan) | Its own tests only |
 | `kit/auth` | Say who is asking | Both apps' `src/session.js` | Its own tests only |
-| `kit/staff` | The people who run a business: an owner, the staff they invite, passwords, sessions that can be ended, roles | New: every platform faked it with a "sign in on any device" button | Its own tests, attacks included; 25 mutations |
+| `kit/staff` | The people who run a business: an owner, the staff they invite, passwords, sessions that can be ended, roles; `kit/staff/pages` for their pages and routes | New: every platform faked it with a "sign in on any device" button | Its own tests, attacks included, and the routes over HTTP; 30 mutations |
 | `kit/notify` | Tell a person something | New, interface and an outbox | Its own tests only |
 | `kit/files` | Keep a file and return its address | New, interface, memory and disk | Its own tests only |
 | `kit/store` | The seam to where documents live (below) | Both apps | Both apps' tests; `syncStore` on `@zubra/sync` 5.8 |
@@ -230,7 +230,15 @@ await staff.accept(token, { name, password });          // makes the account (or
 - **Links:** invites, resets and the first owner's setup link are one-time tokens that expire, stored as hashes. The setup link works only while the business has nobody. Two links used at the same moment can't make two accounts for one email, or two first owners.
 - **Roles:** an owner can do everything, and the business always keeps one. Owner actions check the account as stored, not the roles a session claims.
 
-Pages that show a link token (`/staff/accept?token=…`) should send `Referrer-Policy: no-referrer`, so the token doesn't leave in a `Referer` header.
+`kit/staff/pages` is the staff side every platform needs, on top of that: the sign-in page, the link page (setup, invite, reset), People for owners (invite, reset links, roles, turning people off) and Your password, with their routes under `/staff`. Link pages send `Referrer-Policy: no-referrer` and `Cache-Control: no-store`, so a token doesn't leave in a `Referer` header or sit in a cache.
+
+```js
+import { staffPages } from '@potomac-solutions/kit/staff/pages';
+
+const pages = staffPages({ staff, home: '/kitchen', business: shop.name, render: (res, title, body) => page(res, title, body) });
+if (await pages.handle(req, res, url, form)) return;            // form: the POST body, or null for a GET
+if (!staff.can(staff.session(req), 'staff')) return page(res, 'Sign in', pages.signIn(url));
+```
 
 ## Known limits
 
