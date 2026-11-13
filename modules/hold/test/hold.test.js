@@ -221,3 +221,26 @@ test('by default one holder holds at most 8 and not forever', async () => {
   now.add(4 * 60_000);
   assert.deepEqual(holds.held('mal', 'p').units, [], 'the 20-minute ceiling let them go');
 });
+
+test('free gives taken units back for good: only the holder’s own, all or nothing', async () => {
+  const store = memoryStore();
+  const holds = createHolds({ store });
+  await holds.choose('a', 'p', { units: ['A1', 'A2', 'A3'] });
+  await holds.confirm('a', 'p', ['A1', 'A2']);
+  await holds.choose('b', 'p', { units: ['B1'] });
+  await holds.confirm('b', 'p');
+  assert.deepEqual(await holds.free('a', 'p', ['A1', 'B1']), { error: 'not-yours', units: ['B1'] });
+  assert.deepEqual(await holds.free('a', 'p', ['A10']), { error: 'not-yours', units: ['A10'] }, 'a free unit is nobody’s');
+  assert.deepEqual([...holds.taken('p').keys()], ['A1', 'A2', 'A3', 'B1'], 'nothing changed');
+  assert.deepEqual(await holds.free('a', 'p', ['A2']), { ok: true, units: ['A2'] });
+  assert.deepEqual([...holds.taken('p').keys()], ['A1', 'A3', 'B1']);
+  assert.equal(holds.held('a', 'p').units.join(), 'A3', 'the still-held unit is untouched');
+  // Someone else can have it now.
+  assert.equal((await holds.choose('c', 'p', { toggle: 'A2' })).ok, true);
+  // Freeing a held unit takes it out of the holder's summary too.
+  assert.deepEqual(await holds.free('a', 'p', ['A3']), { ok: true, units: ['A3'] });
+  assert.deepEqual(holds.held('a', 'p'), { units: [], until: 0 });
+  assert.deepEqual(store.get('holds', 'p/a').units, []);
+  assert.deepEqual(await holds.free('a', 'p', []), { error: 'nothing' });
+  assert.deepEqual(await holds.free('', 'p', ['A1']), { error: 'no-holder' });
+});

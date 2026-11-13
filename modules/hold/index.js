@@ -168,6 +168,30 @@ export function createHolds({
     return { ok: true, units: mine };
   }
 
+  /**
+   * Give units back for good: a booking cancelled, a sign-up withdrawn. Unlike `release`, this
+   * frees units the holder has *taken* (confirmed), not only those they hold. Only the holder's
+   * own units: if any unit in the list is free or someone else's, nothing changes. Their other
+   * units in the pool, held or taken, are untouched.
+   */
+  async function free(holder, pool, units) {
+    if (!holder) return { error: 'no-holder' };
+    const asked = [...new Set((units ?? []).map(String))];
+    if (!asked.length) return { error: 'nothing' };
+    const at = now();
+    const all = taken(pool, at);
+    const notMine = asked.filter((unit) => all.get(unit)?.by !== holder);
+    if (notMine.length) return { error: 'not-yours', units: notMine.sort(order) };
+    const writes = asked.map((unit) => store.write(N.units, `${pool}/${unit}`, FREE));
+    // If any were still held, the holder's summary loses them.
+    if (asked.some((unit) => all.get(unit).state === 'held')) {
+      const rest = mineIn(all, holder).filter((unit) => !asked.includes(unit)).sort(order);
+      const before = store.get(N.holders, `${pool}/${holder}`);
+      writes.push(store.write(N.holders, `${pool}/${holder}`, summary(rest, rest.length ? (before?.until ?? 0) : 0, rest.length ? (before?.since ?? 0) : 0)));
+    }
+    await Promise.all(writes);
+    return { ok: true, units: asked.sort(order) };
+  }
   /** Let go of every hold whose time is up, and tell everyone. Returns how many. */
   async function sweep(at = now()) {
     const lapsed = store.under(N.units).filter((doc) => doc.state === 'held' && doc.until <= at);
@@ -191,5 +215,5 @@ export function createHolds({
   const timer = sweepMs ? setInterval(() => sweep().catch((error) => console.error(error)), sweepMs) : null;
   timer?.unref?.();
 
-  return { holdMs, taken, held, choose, chooseAcross, release, confirm, sweep, close: () => clearInterval(timer) };
+  return { holdMs, taken, held, choose, chooseAcross, release, confirm, free, sweep, close: () => clearInterval(timer) };
 }
