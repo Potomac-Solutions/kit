@@ -13,7 +13,7 @@
 //
 //   const staff = createStaff({ store, secure: production });
 //   staff.session(req)                      → { account, name, email, roles } | null
-//   await staff.signIn(email, password)     → { ok, cookie } | { error: 'wrong' | 'locked' }
+//   await staff.signIn(email, password, { client })  → { ok, cookie } | { error: 'wrong' | 'locked' }
 //   staff.can(who, 'staff')                 → an owner can do everything
 //
 // The first owner comes from a setup link (`setup()`), which works only while the business has
@@ -62,8 +62,12 @@ export function createStaff({
   sessionMs = 12 * 3_600_000,
   tokenMs = 7 * DAY,
   setupMs = DAY,
-  // Failed sign-ins before an email is locked, and for how long.
+  // Failed sign-ins from one client (a device's address) before that client is locked out of an
+  // email, and for how long. Counting by client means someone guessing can't lock the real person
+  // out from their own device. `emailTries` is a backstop across every client, for guessing from
+  // many addresses at once.
   tries = 5,
+  emailTries = 100,
   lockMs = 15 * 60_000,
   minPassword = 10,
   cost = { N: 2 ** 15, r: 8, p: 1 },
@@ -76,7 +80,23 @@ export function createStaff({
   const cookieName = secure ? `__Host-${name}` : name;
   // Unknown emails are checked against this, so they take as long as known ones.
   const decoy = hashPassword(token(), cost);
-  const failures = new Map(); // email → { count, until }
+  const failures = new Map(); // `${email} ${client}` → { count, until }
+  const byEmailFailures = new Map(); // email → { count, until }
+  const pairOf = (email, client) => `${email} ${String(client ?? '').slice(0, 100)}`;
+  const live = (entry) => (entry && entry.until > now() ? entry : null);
+  /** Count one failure in a map; past a size, forget the entries whose time is up. */
+  function count(map, key) {
+    const counted = (live(map.get(key))?.count ?? 0) + 1;
+    // Made-up emails would grow these forever.
+    if (map.size >= 10_000) for (const [k, entry] of map) if (entry.until <= now()) map.delete(k);
+    map.set(key, { count: counted, until: now() + lockMs });
+    return counted;
+  }
+  /** Forget every failure for an email (its owner proved who they are with a link). */
+  function forget(email) {
+    byEmailFailures.delete(email);
+    for (const key of failures.keys()) if (key.startsWith(`${email} `)) failures.delete(key);
+  }
 
   const accounts = () => store.under('accounts');
   const byEmail = (email) => accounts().find((account) => account.email === email) ?? null;
@@ -142,7 +162,7 @@ export function createStaff({
     cookieName,
     roles: [...roles],
 
-    /** How many emails the lockout is counting failures for (for monitoring a flood). */
+    /** How many email-and-client pairs the lockout is counting failures for (for monitoring a flood). */
     remembered: () => failures.size,
 
     /** Whether the business has nobody yet: the setup link is offered only then. */
@@ -164,22 +184,27 @@ export function createStaff({
 
     /**
      * Sign in. A wrong password and an unknown email get the same answer, in about the same time.
-     * After `tries` failures an email is locked for `lockMs`, right password or not.
+     * After `tries` failures from one client, that client is locked out of the email for `lockMs`,
+     * right password or not; other clients aren't. After `emailTries` failures from anywhere, the
+     * email is locked for everyone. `client` is the device's address (staff/pages passes it).
      */
-    async signIn(email, password) {
+    async signIn(email, password, { client = '' } = {}) {
       email = cleanEmail(email);
-      const failed = failures.get(email);
-      if (failed && failed.until > now() && failed.count >= tries) return { error: 'locked', until: failed.until };
+      const pair = pairOf(email, client);
+      const mine = live(failures.get(pair));
+      const all = live(byEmailFailures.get(email));
+      if (mine && mine.count >= tries) return { error: 'locked', until: mine.until };
+      if (all && all.count >= emailTries) return { error: 'locked', until: all.until };
       const account = byEmail(email);
       const ok = (await checkPassword(String(password ?? ''), account?.hash ?? (await decoy))) && Boolean(account) && !account.disabled;
       if (!ok) {
-        const count = failed && failed.until > now() ? failed.count + 1 : 1;
-        // Made-up emails would grow this forever: past a size, forget the ones whose time is up.
-        if (failures.size >= 10_000) for (const [key, entry] of failures) if (entry.until <= now()) failures.delete(key);
-        failures.set(email, { count, until: now() + lockMs });
-        return count >= tries ? { error: 'locked', until: now() + lockMs } : { error: 'wrong' };
+        const fromHere = count(failures, pair);
+        const everywhere = count(byEmailFailures, email);
+        return fromHere >= tries || everywhere >= emailTries ? { error: 'locked', until: now() + lockMs } : { error: 'wrong' };
       }
-      failures.delete(email);
+      // A success clears this client's count. The count across clients stays: guesses from
+      // elsewhere still add up toward the backstop.
+      failures.delete(pair);
       return { ok: true, account: account.key, cookie: await startSession(account.key) };
     },
 
@@ -238,7 +263,7 @@ export function createStaff({
         await store.write('accounts', account, { hash, changedAt: now() });
         await this.endSessions(account);
       }
-      failures.delete(email);
+      forget(email);
       return { ok: true, account, cookie: await startSession(account) };
     },
 

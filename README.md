@@ -37,7 +37,8 @@ Each layer imports only from the layers below it.
 | `kit/price` | Turn an item and a context into a price | New | Its own tests only |
 | `kit/pay` | Collect money for an order | New (`pay(order)` from the CineStack plan) | Its own tests only |
 | `kit/auth` | Say who is asking | Both apps' `src/session.js` | Its own tests only |
-| `kit/staff` | The people who run a business: an owner, the staff they invite, passwords, sessions that can be ended, roles; `kit/staff/pages` for their pages and routes | New: every platform faked it with a "sign in on any device" button | Its own tests, attacks included, and the routes over HTTP; 30 mutations |
+| `kit/staff` | The people who run a business: an owner, the staff they invite, passwords, sessions that can be ended, roles; `kit/staff/pages` for their pages and routes | New: every platform faked it with a "sign in on any device" button | Its own tests, attacks included, and the routes over HTTP; 35 mutations |
+| `kit/notice` | Show a page's one-line message only if the server wrote it: signs `?problem=` and `?done=` on redirect, drops unsigned ones on read | New: a link could put any words in a real page's alert box | Its own tests; 3 mutations |
 | `kit/notify` | Tell a person something | New, interface and an outbox | Its own tests only |
 | `kit/files` | Keep a file and return its address | New, interface, memory and disk | Its own tests only |
 | `kit/store` | The seam to where documents live (below) | Both apps | Both apps' tests; `syncStore` on `@zubra/sync` 5.8 |
@@ -219,13 +220,13 @@ if (staff.needsOwner()) console.log(`Set up the first owner: ${origin}/staff/acc
 const who = staff.session(req);                         // { account, name, email, roles } | null
 if (!staff.can(who, 'staff')) return redirect('/staff/sign-in');
 
-await staff.signIn(email, password);                    // { ok, cookie } | { error: 'wrong' | 'locked' }
+await staff.signIn(email, password, { client });        // { ok, cookie } | { error: 'wrong' | 'locked' }
 await staff.invite(who, { email, roles: ['staff'] });   // { ok, token }: send them /staff/accept?token=…
 await staff.accept(token, { name, password });          // makes the account (or sets a new password), signs in
 ```
 
 - **Passwords:** scrypt, salted, the cost kept with the hash; at least 10 characters, not the email.
-- **Sign-in:** one answer (`wrong`) for an unknown email and a wrong password, and the same work for both, so neither the answer nor the time says whether an email has an account. Five failures lock an email for 15 minutes.
+- **Sign-in:** one answer (`wrong`) for an unknown email and a wrong password, and the same work for both, so neither the answer nor the time says whether an email has an account. Five failures from one device's address lock *that address* out of the email for 15 minutes, so someone guessing can't lock the real person out from their own phone. A hundred failures from anywhere lock the email for everyone (`emailTries`), as a backstop against guessing from many addresses. A used reset link clears both.
 - **Sessions:** a fresh random id at every sign-in, so one can't be planted. Only its hash is stored. `HttpOnly`, `SameSite=Lax`, and `__Host-` with `Secure` over https. They end on sign-out, on a password change or reset (the others), and when an owner turns the account off.
 - **Links:** invites, resets and the first owner's setup link are one-time tokens that expire, stored as hashes. The setup link works only while the business has nobody. Two links used at the same moment can't make two accounts for one email, or two first owners.
 - **Roles:** an owner can do everything, and the business always keeps one. Owner actions check the account as stored, not the roles a session claims.
@@ -235,9 +236,25 @@ await staff.accept(token, { name, password });          // makes the account (or
 ```js
 import { staffPages } from '@potomac-solutions/kit/staff/pages';
 
-const pages = staffPages({ staff, home: '/kitchen', business: shop.name, render: (res, title, body) => page(res, title, body) });
+const notices = createNotices({ secret });                       // kit/notice: the app's own redirects use it too
+const pages = staffPages({ staff, home: '/kitchen', business: shop.name, notices, proxies: production ? 1 : 0, render: (res, title, body) => page(res, title, body) });
 if (await pages.handle(req, res, url, form)) return;            // form: the POST body, or null for a GET
 if (!staff.can(staff.session(req), 'staff')) return page(res, 'Sign in', pages.signIn(url));
+```
+
+- `notices` signs the messages these routes leave in an address and reads them on the sign-in page. Pass the app's own, so its pages show them too.
+- `proxies` is how many proxies in front add to `X-Forwarded-For` (one on Railway or Fly). Sign-in takes the address from the entry they added, never from what the client sent; with `0` it is the socket's.
+
+## Messages after a form
+
+`kit/notice` signs the one-line message a redirect carries (`?problem=`, `?done=`), so a page shows only words the server wrote. A link someone sends with `?problem=Your password expired, call …` shows nothing.
+
+```js
+import { createNotices } from '@potomac-solutions/kit/notice';
+
+const notices = createNotices({ secret });
+res.writeHead(303, { location: notices.sign(`/order?problem=${encodeURIComponent(error)}`) });
+const { problem, done } = notices.read(url);   // '' unless signed here; escape them as any text
 ```
 
 ## Known limits
@@ -248,8 +265,8 @@ if (!staff.can(staff.session(req), 'staff')) return page(res, 'Sign in', pages.s
 - **A payment that outlives `payMs` (2 minutes by default) is paid but not booked.** `book` answers `lapsed-after-payment` with the provider's `ref`, so the app can refund; the kit doesn't refund.
 - **The sweep reads every unit document.** Fine for one theatre's evening; needs an index on `until` beyond that.
 - **`auth` and `staff` use `node:crypto`,** so they do not run on Workers yet.
-- **Staff lockouts are kept in the process.** They reset when it restarts, and several processes count apart. Anyone who knows an owner's email can lock it for 15 minutes by failing five times; the owner can still be signed in elsewhere, and a reset link still works.
-- **Nothing limits sign-in attempts per address.** Each one costs a password hash (about 50 ms of CPU at the default cost), so a flood is a load problem: put a rate limit in front of the sign-in route (the platform's proxy, or the app). The lockout counts per email, and forgets expired ones once it remembers 10,000.
+- **Staff lockouts are kept in the process.** They reset when it restarts, and several processes count apart. Someone guessing from many addresses can still reach the per-email backstop (100 failures); a reset link clears it.
+- **Each sign-in costs a password hash** (about 50 ms of CPU at the default cost), so a flood is a load problem: put a rate limit in front of the sign-in route (the platform's proxy, or the app). The lockout forgets expired entries once it remembers 10,000.
 - **The kit sends no email.** An invite or reset is a link the owner passes on (or the app sends with `notify`). No two-factor sign-in yet.
 - **A checkout left pending stays pending.** If the server stops between taking stock and hearing from the provider, the stock stays taken and the checkout says `pending`. Nothing sweeps it yet; the provider's own record (keyed by the checkout) says whether money moved.
 - **An app with its own copy of a Zubra UI part, using the kit as a package, ships both.** The first to load defines the tag. Harmless while they match; Zubra has no rule yet for an app tag and a package tag that differ.
