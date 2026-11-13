@@ -112,6 +112,11 @@ const mutations = [
   ['staff', "__Host- over https", "secure ? `__Host-${name}` : name", "name"],
   ['staff', 'the lockout forgets expired emails', 'if (failures.size >= 10_000) for', 'if (false) for'],
   ['staff', "emails are compared lower-case", "String(email ?? '').trim().toLowerCase()", "String(email ?? '').trim()"],
+  ['staff/pages', "the owner's posts are the owner's", "        if (!owner) return back(res, home), true;\n        noStore(res);\n        const account", "        noStore(res);\n        const account"],
+  ['staff/pages', "the owner's page is the owner's", "      if (!owner) return back(res, home), true;\n      noStore(res);\n      return render(res, 'People'", "      noStore(res);\n      return render(res, 'People'"],
+  ['staff/pages', "link pages send no Referer", "    res.setHeader('referrer-policy', 'no-referrer');", ""],
+  ['staff/pages', "sign-out ends the session", "        const done = await staff.signOut(req);", "        const done = { cookie: 'x=1' };"],
+  ['staff/pages', "a password change needs the current one", "await staff.changePassword(who, form.get('current'), form.get('next'))", "await staff.changePassword(who, 'kitchen owner password', form.get('next'))"],
 ];
 
 // Components, against the browser tests (`npm run mutate -- --components`, slower).
@@ -135,7 +140,8 @@ const browser = process.argv.includes('--components');
 
 let missed = 0;
 for (const [module, what, find, replace] of browser ? components : mutations) {
-  const path = browser ? `${root}components/${module}.zb` : `${root}modules/${module}/index.js`;
+  // `staff/pages` is modules/staff/pages.js; a plain name is the module's index.js.
+  const path = browser ? `${root}components/${module}.zb` : module.includes('/') ? `${root}modules/${module}.js` : `${root}modules/${module}/index.js`;
   const source = readFileSync(path, 'utf8');
   if (source.split(find).length !== 2) {
     console.log(`??   ${module}: ${what} (the line to break was not found exactly once)`);
