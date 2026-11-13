@@ -11,17 +11,33 @@
 // (invite, reset, role, off, on). `render(res, title, body)` is the app's own page around a body;
 // the HTML uses the class names the platforms' layouts share (panel, notice, ok, hint, button).
 // Every form posts to the app's own origin; refuse cross-site posts before calling `handle`.
+//
+// Pass the app's `notices` (the kit's `notice`), so the messages these routes leave in an address
+// are signed and the app's own pages show them. Behind a proxy (Railway, Fly, a load balancer), set
+// `proxies` to how many add to X-Forwarded-For, so sign-in counts failures by the real address.
+import { randomBytes } from 'node:crypto';
+import { createNotices } from '../notice/index.js';
+
+/**
+ * The address a request came from. With `proxies` (how many trusted proxies sit in front), the
+ * entry they added to X-Forwarded-For; entries further left are whatever the client sent.
+ */
+export function clientAddress(req, { proxies = 0 } = {}) {
+  const socket = req.socket?.remoteAddress ?? '';
+  if (!proxies) return socket;
+  const forwarded = String(req.headers?.['x-forwarded-for'] ?? '').split(',').map((part) => part.trim()).filter(Boolean);
+  return forwarded[forwarded.length - proxies] ?? socket;
+}
 
 const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
-export function staffPages({ staff, home = '/staff', business = 'the business', render, secure = false, base = '/staff' }) {
+export function staffPages({ staff, home = '/staff', business = 'the business', render, secure = false, base = '/staff', notices = createNotices({ secret: randomBytes(32) }), proxies = 0, client = (req) => clientAddress(req, { proxies }) }) {
   if (typeof render !== 'function') throw new TypeError('staffPages needs render(res, title, body)');
   const at = (path) => `${base}${path}`;
-  const back = (res, location) => (res.writeHead(303, { location }), res.end());
+  const back = (res, location) => (res.writeHead(303, { location: notices.sign(location) }), res.end());
   const withWord = (path, key, words) => `${path}${path.includes('?') ? '&' : '?'}${key}=${encodeURIComponent(words)}`;
   const note = (url) => {
-    const problem = (url.searchParams.get('problem') ?? '').slice(0, 200);
-    const done = (url.searchParams.get('done') ?? '').slice(0, 200);
+    const { problem, done } = notices.read(url);
     return `${problem ? `<p class="notice" role="alert">${escape(problem)}</p>` : ''}${done ? `<p class="ok" role="status">${escape(done)}</p>` : ''}`;
   };
   const noStore = (res) => {
@@ -105,7 +121,7 @@ ${note(url)}
     if (req.method === 'POST') {
       if (!form) return false;
       if (path === at('/sign-in')) {
-        const done = await staff.signIn(form.get('email'), form.get('password'));
+        const done = await staff.signIn(form.get('email'), form.get('password'), { client: client(req) });
         if (done.error) return back(res, withWord(home, 'problem', done.error === 'locked' ? 'Too many tries. Wait 15 minutes, or ask an owner for a reset link.' : 'That email and password don’t match.')), true;
         res.setHeader('set-cookie', done.cookie);
         return back(res, home), true;

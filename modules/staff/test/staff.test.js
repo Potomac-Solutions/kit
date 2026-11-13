@@ -250,6 +250,46 @@ test('password hashes: salted, checked in constant time, cost kept with the hash
   assert.equal(await checkPassword('café au lait', await hashPassword('café au lait', cost)), true);
 });
 
+test('someone guessing locks out their own device, not the real person on theirs', async () => {
+  const now = clock();
+  const { staff } = await business({ now, tries: 3, lockMs: 60_000 });
+  const guess = (n) => staff.signIn('rosa@example.com', `wrong one ${n}`, { client: '203.0.113.9' });
+  assert.deepEqual(await guess(1), { error: 'wrong' });
+  assert.deepEqual(await guess(2), { error: 'wrong' });
+  assert.equal((await guess(3)).error, 'locked');
+  assert.equal((await staff.signIn('rosa@example.com', 'correct horse battery', { client: '203.0.113.9' })).error, 'locked', 'the guessing device stays locked, right password or not');
+  assert.equal((await staff.signIn('rosa@example.com', 'correct horse battery', { client: '198.51.100.4' })).ok, true, 'Rosa signs in from her own phone');
+  // Rosa's success doesn't unlock the guesser.
+  assert.equal((await guess(4)).error, 'locked');
+  now.add(60_001);
+  assert.deepEqual(await guess(5), { error: 'wrong' });
+});
+
+test('guesses from many addresses add up to a lock on the email, for everyone', async () => {
+  const now = clock();
+  const { staff } = await business({ now, tries: 3, emailTries: 6, lockMs: 60_000 });
+  for (let i = 0; i < 5; i++) assert.deepEqual(await staff.signIn('rosa@example.com', 'nope nope nope', { client: `10.0.0.${i}` }), { error: 'wrong' });
+  assert.equal((await staff.signIn('rosa@example.com', 'nope nope nope', { client: '10.0.0.5' })).error, 'locked');
+  assert.equal((await staff.signIn('rosa@example.com', 'correct horse battery', { client: '198.51.100.4' })).error, 'locked');
+  // Other emails aren't touched.
+  assert.deepEqual(await staff.signIn('sam@example.com', 'nope nope nope', { client: '198.51.100.4' }), { error: 'wrong' });
+  now.add(60_001);
+  assert.equal((await staff.signIn('rosa@example.com', 'correct horse battery', { client: '198.51.100.4' })).ok, true);
+});
+
+test('a reset link clears every lock on the email', async () => {
+  const now = clock();
+  const { staff, rosaCookie } = await business({ now, tries: 2, emailTries: 4, lockMs: 60_000 });
+  const owner = staff.session(req(rosaCookie));
+  const { token } = await staff.invite(owner, { email: 'sam@example.com', roles: ['staff'] });
+  const sam = await staff.accept(token, { name: 'Sam', password: 'sams first password' });
+  for (const client of ['a', 'a', 'b', 'b']) await staff.signIn('sam@example.com', 'not it at all', { client });
+  assert.equal((await staff.signIn('sam@example.com', 'sams first password', { client: 'c' })).error, 'locked');
+  const reset = await staff.resetLink(owner, sam.account);
+  assert.equal((await staff.accept(reset.token, { password: 'sams second password' })).ok, true);
+  for (const client of ['a', 'b', 'c']) assert.equal((await staff.signIn('sam@example.com', 'sams second password', { client })).ok, true, client);
+});
+
 test('a flood of made-up emails doesn’t keep growing what the lockout remembers', async () => {
   const now = clock();
   const { staff } = await business({ now, lockMs: 1000, cost: { N: 2 ** 4, r: 1, p: 1 } });
