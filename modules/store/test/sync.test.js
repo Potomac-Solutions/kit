@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSyncServer, memoryLog } from '@zubra/sync/server';
-import { syncStore, checkStore, serverOnly, SERVER_ONLY } from '../index.js';
+import { syncStore, checkStore, serverOnly, SERVER_ONLY, SECRET } from '../index.js';
 import { market } from '../../checkout/test/market.js';
 
 test('syncStore keeps the store contract', async () => {
@@ -76,4 +76,23 @@ test("serverOnly: a page can't push to the kit's collections, the server still w
   const strict = serverOnly(SERVER_ONLY, () => false);
   assert.equal(strict({ kind: 'change', collection: 'notes' }), false, 'next decides the rest');
   assert.equal(serverOnly()({ kind: 'read', collection: 'items' }), true, 'pages still read');
+});
+
+test('serverOnly: a page can never read or write staff accounts, sessions or link tokens, whatever its scope', async () => {
+  const sync = createSyncServer({ log: memoryLog(), authorize: serverOnly(SERVER_ONLY, () => true), scope: () => ({ accounts: true, 'staff-sessions': true, 'staff-tokens': true, notes: true }) });
+  const store = await syncStore(sync);
+  await store.write('accounts', 'a1', { email: 'rosa@example.com', hash: 'scrypt$secret' });
+  await store.write('staff-sessions', 's1', { account: 'a1' });
+  await store.write('staff-tokens', 't1', { kind: 'reset' });
+  await store.write('notes', 'n1', { text: 'hello' });
+  const pulled = await (await sync.fetch(new Request('http://shop.example/_zb/sync/pull?since=0'))).json();
+  assert.deepEqual([...new Set(pulled.changes.map((change) => change.collection))], ['notes']);
+  assert.ok(!JSON.stringify(pulled).includes('scrypt'));
+  const clock = `${String(Date.now() + 1).padStart(15, '0')}-00000-page`;
+  for (const collection of SECRET) {
+    const pushed = await sync.fetch(new Request('http://shop.example/_zb/sync/push', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ changes: [{ collection, key: 'a1', field: 'roles', value: ['owner'], clock }] }) }));
+    assert.equal(pushed.status, 403, collection);
+  }
+  assert.equal(store.get('accounts', 'a1').roles, undefined);
+  assert.equal(serverOnly()({ kind: 'read', collection: 'accounts' }), false);
 });
