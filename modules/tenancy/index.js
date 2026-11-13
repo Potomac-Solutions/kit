@@ -6,7 +6,7 @@
 //
 //   const tenancy = createTenancy({
 //     tenants,                                                     // createTenants(...)
-//     open: async (tenant) => createSyncServer({ log: await sqliteLog(`data/${tenant.id}.db`) }),
+//     open: async (tenant) => createSyncServer({ log: await sqliteLog(`data/${tenant.id}.db`), authorize: serverOnly() }),
 //     setup: ({ store }) => ({ catalog: createCatalog({ store }), holds: createHolds({ store }) }),
 //   });
 //
@@ -14,6 +14,9 @@
 //   if (await tenancy.handle(req, res)) return;            // /_zb/sync/* to the business's own log
 //   const space = await tenancy.space(req);                // { tenant, sync, store, ...setup's }
 //   if (!space) return notFound(res);                      // a host nobody answers to
+//
+// Since Zubra 5.9.1 a Sync server takes no writes from pages until it's told who may make them,
+// so `open` passes `authorize` (`serverOnly` keeps the kit's collections the server's).
 //
 // `open` runs once per business, the first time it's asked for (requests that arrive together
 // share the one call), and `setup` once after it. The business comes from the host name only
