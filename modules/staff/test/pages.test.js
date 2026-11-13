@@ -50,6 +50,8 @@ test('set up, invite, sign in and out, and the owner’s pages, through the rout
   assert.equal(await words(made), '/kitchen?done=You’re signed in.');
   const ma = cookieOf(made);
   assert.match(await (await send('/kitchen', { cookie: ma })).text(), /KITCHEN[\s\S]*Signed in as Ma Teets[\s\S]*People/);
+  // The bar holds a form, so it can't be a paragraph (the parser would end it at the form).
+  assert.doesNotMatch(await (await send('/kitchen', { cookie: ma })).text(), /<p\b(?:(?!<\/p>)[\s\S])*<form/);
   assert.equal((await send('/staff', { cookie: ma })).headers.get('location'), '/kitchen', '/staff itself goes home');
 
   const invited = await (await send('/staff/people/invite', { cookie: ma, form: { email: 'jo@example.com', name: 'Jo', role: 'staff' } })).text();
