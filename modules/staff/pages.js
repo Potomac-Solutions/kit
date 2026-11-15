@@ -35,11 +35,20 @@ export function crossSite(req) {
   }
 }
 
-export function clientAddress(req, { proxies = 0 } = {}) {
+// Where a proxy in front of the app connects from: loopback or a private network. A connection
+// from anywhere else came straight to the app, past the proxy, and its X-Forwarded-For is its own.
+const PRIVATE = /^(?:127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|169\.254\.|::1$|f[cd][0-9a-f]{0,2}:|fe80:)/i;
+export const privateAddress = (address) => PRIVATE.test(String(address ?? '').replace(/^::ffff:/i, ''));
+
+export function clientAddress(req, { proxies = 0, trust = privateAddress } = {}) {
   const socket = req.socket?.remoteAddress ?? '';
-  if (!proxies) return socket;
+  if (!proxies || !trust(socket)) return socket;
   const forwarded = String(req.headers?.['x-forwarded-for'] ?? '').split(',').map((part) => part.trim()).filter(Boolean);
-  return forwarded[forwarded.length - proxies] ?? socket;
+  if (!forwarded.length) return socket;
+  // Fewer entries than proxies: `proxies` is more than there are. The first entry is the client's
+  // then (unless it sent one of its own), where the proxy's own address would make every visitor
+  // one client, locked out together by anyone's five failures.
+  return forwarded.length >= proxies ? forwarded[forwarded.length - proxies] : forwarded[0];
 }
 
 const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);

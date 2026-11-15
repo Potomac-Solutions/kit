@@ -246,7 +246,7 @@ if (!staff.can(staff.session(req), 'staff')) return page(res, 'Sign in', pages.s
 ```
 
 - `notices` signs the messages these routes leave in an address and reads them on the sign-in page. Pass the app's own, so its pages show them too.
-- `proxies` is how many proxies in front add to `X-Forwarded-For` (one on Railway or Fly). Sign-in takes the address from the entry they added, never from what the client sent; with `0` it is the socket's.
+- `proxies` is how many proxies in front add to `X-Forwarded-For` (one on Railway or Fly). Sign-in takes the address from the entry they added, never from what the client sent; with `0` it is the socket's. The header is believed only when the connection comes from a loopback or private address, where a proxy connects from (a request that reaches the app directly keeps its socket's address); a platform whose proxy connects from a public address needs `client: (req) => clientAddress(req, { proxies: 1, trust: (address) => … })`. If the header has fewer entries than `proxies`, its first entry is used rather than the proxy's own address, which would make every visitor one client.
 
 ## Messages after a form
 
