@@ -28,6 +28,7 @@
     "./reserve": "./modules/reserve/index.js",
     "./tenancy": "./modules/tenancy/index.js",
     "./reports": "./modules/reports/index.js",
+    "./charts": "./modules/charts/index.js",
     "./components/*": "./components/*"
   },
   "files": [

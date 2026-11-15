@@ -43,6 +43,7 @@ Each layer imports only from the layers below it.
 | `kit/notify` | Tell a person something | New, interface and an outbox | Its own tests only |
 | `kit/files` | Keep a file and return its address | New, interface, memory and disk | Its own tests only |
 | `kit/reports` | Count and total records by day, week or month in the business's time zone, break them down by a key, and write CSV a spreadsheet can't run | New | Its own tests, a daylight saving change included |
+| `kit/charts` | Draw a bar chart or a breakdown on the server as SVG, with a tooltip per bar and the same numbers in a table, on the business's colours | Outfitter's and Front Desk's admin pages | Its own tests; both apps' report pages |
 | `kit/store` | The seam to where documents live (below) | Both apps | Both apps' tests; `syncStore` on `@zubra/sync` 5.8 |
 
 Features, built from the rules:
