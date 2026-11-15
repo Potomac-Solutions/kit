@@ -12,13 +12,24 @@
 // (src/session.js, fc0f6ae) and CineStack (src/session.js, 1c17019) had their own copy.
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
-export function signedCookie({ secret, name = 'session', maxAge = 30 * 86_400, secure = false, roles = () => [] } = {}) {
-  if (!secret) throw new TypeError('signedCookie needs a secret');
+/** A secret long enough to sign with: 32 characters (or bytes), as `randomBytes(32)` gives. */
+export function checkSecret(secret, who) {
+  const size = typeof secret === 'string' ? secret.length : secret?.length ?? 0;
+  if (!secret || size < 32) throw new TypeError(`${who} needs a secret of at least 32 characters: one anyone could guess signs nothing (make one with \`node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"\`)`);
+}
+
+// Secure cookies unless told otherwise in production; plain HTTP in development, where browsers
+// would refuse them.
+export const PRODUCTION = typeof process !== 'undefined' && process.env?.NODE_ENV === 'production';
+
+export function signedCookie({ secret, name = 'session', maxAge = 30 * 86_400, secure = PRODUCTION, roles = () => [], now = Date.now } = {}) {
+  checkSecret(secret, 'signedCookie');
   const mac = (value) => createHmac('sha256', secret).update(value).digest('base64url');
   const pub = (id) => createHmac('sha256', secret).update(`pub:${id}`).digest('hex').slice(0, 12);
   const who = (id) => ({ id, pub: pub(id), roles: roles(id) });
 
-  function read(cookieHeader = '') {
+  /** The cookie's id and when it was signed (null: the older form), or null. */
+  function check(cookieHeader = '') {
     const raw = cookieHeader
       .split(';')
       .map((part) => part.trim())
@@ -31,18 +42,30 @@ export function signedCookie({ secret, name = 'session', maxAge = 30 * 86_400, s
     } catch {
       return null;
     }
-    const dot = value.lastIndexOf('.');
-    const id = value.slice(0, dot);
-    const sig = value.slice(dot + 1);
-    if (dot < 1 || !sig) return null;
-    const expected = Buffer.from(mac(id));
-    const given = Buffer.from(sig);
+    // `<id>.<signed at>.<sig>`: when it was signed is signed too, so a cookie copied off a device
+    // stops working after maxAge, whatever the browser was told. `<id>.<sig>` is the older form,
+    // with no time: it still names its id (holds and orders hang on it), and `ensure` re-signs it.
+    const parts = value.split('.');
+    if (parts.length < 2 || parts.length > 3 || !parts[0] || !parts.at(-1)) return null;
+    const signed = parts.slice(0, -1).join('.');
+    const expected = Buffer.from(mac(signed));
+    const given = Buffer.from(parts.at(-1));
     if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null;
-    return who(id);
+    const at = parts.length === 3 ? Number.parseInt(parts[1], 36) : null;
+    if (at !== null && !(at <= now() && now() - at < maxAge * 1000)) return null;
+    return { id: parts[0], at };
   }
 
-  /** The Set-Cookie value that signs `id` in. */
-  const cookie = (id) => `${name}=${encodeURIComponent(`${id}.${mac(id)}`)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
+  function read(cookieHeader = '') {
+    const found = check(cookieHeader);
+    return found && who(found.id);
+  }
+
+  /** The Set-Cookie value that signs `id` in, now. */
+  const cookie = (id) => {
+    const signed = `${id}.${now().toString(36)}`;
+    return `${name}=${encodeURIComponent(`${signed}.${mac(signed)}`)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
+  };
 
   return {
     read,
@@ -51,8 +74,13 @@ export function signedCookie({ secret, name = 'session', maxAge = 30 * 86_400, s
     session: (request) => read(request.headers.get('cookie') ?? ''),
     /** The session on a Node request; a newcomer gets a fresh id and a cookie through `setHeader`. */
     ensure(req, res) {
-      const known = read(req.headers.cookie ?? '');
-      if (known) return known;
+      const known = check(req.headers.cookie ?? '');
+      if (known) {
+        // Re-signed past half its life (or in the older form), so a visitor who keeps coming
+        // keeps their id, and one who stops is signed out by maxAge.
+        if (known.at === null || now() - known.at > (maxAge * 1000) / 2) res.setHeader('set-cookie', cookie(known.id));
+        return who(known.id);
+      }
       const id = randomBytes(12).toString('base64url');
       res.setHeader('set-cookie', cookie(id));
       return who(id);

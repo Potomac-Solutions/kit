@@ -19,6 +19,7 @@
 // The first owner comes from a setup link (`setup()`), which works only while the business has
 // no accounts. After that, an owner invites people (`invite`) and resets passwords (`resetLink`).
 // Links carry a one-time token; only its hash is stored.
+import { PRODUCTION } from '../auth/index.js';
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { SECRET } from '../store/index.js';
 
@@ -75,7 +76,7 @@ export function createStaff({
   store,
   roles = [OWNER, 'staff'],
   name = 'staff',
-  secure = false,
+  secure = PRODUCTION,
   sessionMs = 12 * 3_600_000,
   tokenMs = 7 * DAY,
   setupMs = DAY,

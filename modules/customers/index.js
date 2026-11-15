@@ -15,6 +15,7 @@
 //   customers.session(req)                              → { customer, name, email } | null
 //
 // A customer's own records (orders, bookings) stay in the app's collections, keyed by `customer`.
+import { PRODUCTION } from '../auth/index.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { checkPassword, hashPassword } from '../staff/index.js';
 
@@ -28,7 +29,7 @@ const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
 export function createCustomers({
   store,
   name = 'account',
-  secure = false,
+  secure = PRODUCTION,
   sessionMs = 30 * 86_400_000,
   tokenMs = 3_600_000,
   tries = 5,

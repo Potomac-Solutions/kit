@@ -36,7 +36,7 @@ Each layer imports only from the layers below it.
 | `kit/tenancy` | Keep each business's documents apart: one Sync log each, its sync traffic routed by host | New | Two businesses on one HTTP server, a SQLite file each: pull, push and the live stream |
 | `kit/price` | Turn an item and a context into a price | New | Its own tests only |
 | `kit/pay` | Collect money for an order | New (`pay(order)` from the CineStack plan) | Its own tests only |
-| `kit/auth` | Say who is asking | Both apps' `src/session.js` | Its own tests only |
+| `kit/auth` | Say who is asking: a signed cookie (`signedCookie`) whose secret is at least 32 characters, whose signing time is signed with it (so a copied cookie stops working after `maxAge`; `ensure` re-signs a returning visitor), and `Secure` by default when `NODE_ENV` is `production` (as in `staff` and `customers`) | Both apps' `src/session.js` | Its own tests only |
 | `kit/staff` | The people who run a business: an owner, the staff they invite, passwords, sessions that can be ended, roles; `kit/staff/pages` for their pages and routes | New: every platform faked it with a "sign in on any device" button | Its own tests, attacks included, and the routes over HTTP; 35 mutations |
 | `kit/customers` | A business's customers, with accounts of their own: sign up, sign in with lockout, sessions that end, one-time reset links, turned off by the business | New: every app took a name and email at checkout and forgot them | Its own tests, attacks included |
 | `kit/notice` | Show a page's one-line message only if the server wrote it: signs `?problem=` and `?done=` on redirect, drops unsigned ones on read | New: a link could put any words in a real page's alert box | Its own tests; 3 mutations |
@@ -268,6 +268,7 @@ const { problem, done } = notices.read(url);   // '' unless signed here; escape 
 - **A payment that outlives `payMs` (2 minutes by default) is paid but not booked.** `book` answers `lapsed-after-payment` with the provider's `ref`, so the app can refund; the kit doesn't refund.
 - **The sweep reads every unit document.** Fine for one theatre's evening; needs an index on `until` beyond that.
 - **`auth` and `staff` use `node:crypto`,** so they do not run on Workers yet.
+- **Upgrading to 0.8: secrets of at least 32 characters.** `signedCookie` and `createNotices` refuse a shorter one at start-up. Cookies `signedCookie` signed before keep their id and are re-signed by `ensure`; until then they carry no time.
 - **Staff lockouts are kept in the process.** They reset when it restarts, and several processes count apart. Someone guessing from many addresses can still reach the per-email backstop (100 failures), which then keeps out a device that never signed in to that email, the only owner's new phone included; a reset link clears it, and the devices it knows are forgotten on a restart.
 - **Each sign-in costs a password hash** (about 50 ms of CPU at the default cost), so a flood is a load problem: put a rate limit in front of the sign-in route (the platform's proxy, or the app). The lockout forgets expired entries once it remembers 10,000.
 - **The kit sends no email.** An invite or reset is a link the owner passes on (or the app sends with `notify`). No two-factor sign-in yet.

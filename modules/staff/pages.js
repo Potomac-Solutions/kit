@@ -15,6 +15,7 @@
 // Pass the app's `notices` (the kit's `notice`), so the messages these routes leave in an address
 // are signed and the app's own pages show them. Behind a proxy (Railway, Fly, a load balancer), set
 // `proxies` to how many add to X-Forwarded-For, so sign-in counts failures by the real address.
+import { PRODUCTION } from '../auth/index.js';
 import { randomBytes } from 'node:crypto';
 import { createNotices } from '../notice/index.js';
 
@@ -53,7 +54,7 @@ export function clientAddress(req, { proxies = 0, trust = privateAddress } = {})
 
 const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
-export function staffPages({ staff, home = '/staff', business = 'the business', render, secure = false, base = '/staff', notices = createNotices({ secret: randomBytes(32) }), proxies = 0, client = (req) => clientAddress(req, { proxies }) }) {
+export function staffPages({ staff, home = '/staff', business = 'the business', render, secure = PRODUCTION, base = '/staff', notices = createNotices({ secret: randomBytes(32) }), proxies = 0, client = (req) => clientAddress(req, { proxies }) }) {
   if (typeof render !== 'function') throw new TypeError('staffPages needs render(res, title, body)');
   const at = (path) => `${base}${path}`;
   const back = (res, location) => (res.writeHead(303, { location: notices.sign(location) }), res.end());

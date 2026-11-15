@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createNotices } from '../index.js';
 
-const notices = createNotices({ secret: 'test secret' });
+const notices = createNotices({ secret: 'test secret xxxxxxxxxxxxxxxxxxxxxxxxxxxx' });
 const read = (location) => notices.read(new URL(location, 'http://shop.example'));
 
 test('a message the server signed shows; the same words typed into a link don’t', () => {
@@ -25,7 +25,7 @@ test('changing a signed message, or adding one beside it, drops it', () => {
 });
 
 test('another secret’s signature doesn’t count', () => {
-  const other = createNotices({ secret: 'someone else' });
+  const other = createNotices({ secret: 'someone else xxxxxxxxxxxxxxxxxxxxxxxxxxx' });
   assert.deepEqual(read(other.sign('/?done=Hi.')), { problem: '', done: '' });
 });
 
@@ -47,7 +47,7 @@ test('a long message is cut before signing, so what shows is what was signed', (
 });
 
 test("a newline in one message can't move the line between two", () => {
-  const notices = createNotices({ secret: 's3cret' });
+  const notices = createNotices({ secret: 's3cret xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' });
   const signed = new URL(notices.sign(`/p?problem=${encodeURIComponent('a')}&done=${encodeURIComponent('b\ndone=c')}`), 'http://x');
   const sig = signed.searchParams.get('sig');
   const shifted = new URL(`http://x/p?problem=${encodeURIComponent('a\ndone=b')}&done=c&sig=${sig}`);
@@ -56,8 +56,8 @@ test("a newline in one message can't move the line between two", () => {
 
 test('two Buffer secrets that would read alike as text sign apart', () => {
   // Both are invalid UTF-8, so as text each byte becomes U+FFFD and the two read the same.
-  const one = createNotices({ secret: Buffer.from([0xff, 0xfe, 0x01]) });
-  const two = createNotices({ secret: Buffer.from([0xfe, 0xff, 0x01]) });
+  const one = createNotices({ secret: Buffer.alloc(32, 0xff) });
+  const two = createNotices({ secret: Buffer.alloc(32, 0xfe) });
   const signed = new URL(one.sign('/p?done=Saved.'), 'http://x');
   assert.equal(one.read(signed).done, 'Saved.');
   assert.equal(two.read(signed).done, '');
