@@ -45,3 +45,20 @@ test('a long message is cut before signing, so what shows is what was signed', (
   assert.equal(notices.sign(`/?problem=x&sig=old`).match(/sig=/g).length, 1, 'an old signature is replaced');
   assert.throws(() => createNotices({}), /secret/);
 });
+
+test("a newline in one message can't move the line between two", () => {
+  const notices = createNotices({ secret: 's3cret' });
+  const signed = new URL(notices.sign(`/p?problem=${encodeURIComponent('a')}&done=${encodeURIComponent('b\ndone=c')}`), 'http://x');
+  const sig = signed.searchParams.get('sig');
+  const shifted = new URL(`http://x/p?problem=${encodeURIComponent('a\ndone=b')}&done=c&sig=${sig}`);
+  assert.deepEqual(notices.read(shifted), { problem: '', done: '' });
+});
+
+test('two Buffer secrets that would read alike as text sign apart', () => {
+  // Both are invalid UTF-8, so as text each byte becomes U+FFFD and the two read the same.
+  const one = createNotices({ secret: Buffer.from([0xff, 0xfe, 0x01]) });
+  const two = createNotices({ secret: Buffer.from([0xfe, 0xff, 0x01]) });
+  const signed = new URL(one.sign('/p?done=Saved.'), 'http://x');
+  assert.equal(one.read(signed).done, 'Saved.');
+  assert.equal(two.read(signed).done, '');
+});
