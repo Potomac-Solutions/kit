@@ -244,3 +244,28 @@ test('free gives taken units back for good: only the holder’s own, all or noth
   assert.deepEqual(await holds.free('a', 'p', []), { error: 'nothing' });
   assert.deepEqual(await holds.free('', 'p', ['A1']), { error: 'no-holder' });
 });
+
+test('one client being many holders is held to maxPerClient in a pool, together', async () => {
+  const now = clock();
+  const holds = createHolds({ store: memoryStore(), now, max: 2, maxPerClient: 4 });
+  const seats = Array.from({ length: 20 }, (_, i) => `s${i + 1}`);
+  // A script with no cookie: a new holder each time, all from one address.
+  const grabs = [];
+  for (let i = 0; i < 10; i++) grabs.push(await holds.choose(`bot${i}`, 'show', { units: seats.slice(i * 2, i * 2 + 2) }, { client: '203.0.113.9' }));
+  assert.equal(grabs.filter((answer) => answer.ok).length, 2, 'four seats between them');
+  assert.deepEqual(grabs.at(-1), { error: 'limit', max: 4, unit: undefined });
+  // Others, from elsewhere, still get seats; and in another pool the count starts again.
+  assert.equal((await holds.choose('rosa', 'show', { units: ['s19', 's20'] }, { client: '198.51.100.4' })).ok, true);
+  assert.equal((await holds.choose('bot9', 'other-show', { units: ['s1', 's2'] }, { client: '203.0.113.9' })).ok, true);
+  // A bot letting go makes room; a lapsed hold does too.
+  await holds.release('bot0', 'show');
+  assert.equal((await holds.choose('bot10', 'show', { units: ['s5', 's6'] }, { client: '203.0.113.9' })).ok, true);
+  now.add(6 * 60_000);
+  assert.equal((await holds.choose('bot11', 'show', { units: ['s7', 's8'] }, { client: '203.0.113.9' })).ok, true);
+  // A holder changing their own seats isn't counted against themselves.
+  const own = createHolds({ store: memoryStore(), now: clock(), max: 4, maxPerClient: 4 });
+  assert.equal((await own.choose('ann', 'show', { units: ['s1', 's2', 's3'] }, { client: '192.0.2.1' })).ok, true);
+  assert.equal((await own.choose('ann', 'show', { units: ['s1', 's2', 's3', 's4'] }, { client: '192.0.2.1' })).ok, true);
+  // The address is in no document pages can read.
+  assert.doesNotMatch(JSON.stringify(holds.taken ? [...holds.taken('show')] : []), /203\.0\.113/);
+});

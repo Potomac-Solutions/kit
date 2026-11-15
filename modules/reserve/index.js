@@ -117,7 +117,7 @@ export function createReserve({
      * Hold `units` (or `count` of `from`) in every one of `pools`, and keep the draft. Holding
      * again with the same key changes it: pools it no longer names are let go.
      */
-    async hold(holder, { key = newKey(), pools = [], units, count, from, valid } = {}) {
+    async hold(holder, { key = newKey(), pools = [], units, count, from, valid, client } = {}) {
       if (!holder) return { error: 'no-holder' };
       pools = [...new Set(pools.map(String))];
       if (!pools.length) return { error: 'no-pools' };
@@ -138,7 +138,7 @@ export function createReserve({
       if (!units.length) return { error: 'no-units' };
 
       const dropped = (before?.state === 'held' || before?.state === 'failed' ? before.pools : []).filter((pool) => !pools.includes(pool));
-      const held = await holds.chooseAcross(holder, [...pools.map((pool) => ({ pool, units })), ...dropped.map((pool) => ({ pool, units: [] }))], { valid });
+      const held = await holds.chooseAcross(holder, [...pools.map((pool) => ({ pool, units })), ...dropped.map((pool) => ({ pool, units: [] }))], { valid, client });
       if (held.error) return held;
 
       const { lines, cents } = quote({ pools, units });
