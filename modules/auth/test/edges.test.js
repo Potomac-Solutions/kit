@@ -60,7 +60,8 @@ test('notify: one sender failing does not lose the other, and all failing is an 
   assert.deepEqual(await notify({ sms: '+1' }, 'hi'), { error: 'not-sent', results: [{ channel: 'sms', error: 'sender-failed' }] });
 });
 
-const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+// The PNG signature, then a few bytes: files checks that a declared image is one.
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2]);
 
 test('files: the same picture is one file; type, size and emptiness are checked', async () => {
   for (const make of [() => memoryFiles({ maxBytes: 10 }), (dir) => diskFiles(dir, { maxBytes: 10 })]) {
@@ -95,4 +96,29 @@ test('files: a path can not be smuggled in as an id', async () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('files: a file declared as an image must be one', async () => {
+  const files = memoryFiles();
+  const page = new TextEncoder().encode('<html><script>alert(1)</script></html>');
+  for (const type of ['image/png', 'image/jpeg', 'image/webp', 'image/avif']) assert.deepEqual(await files.put({ type, body: page }), { error: 'type' }, type);
+  const real = {
+    'image/png': PNG,
+    'image/jpeg': new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10]),
+    'image/webp': new TextEncoder().encode('RIFF\0\0\0\0WEBPVP8 '),
+    'image/avif': new TextEncoder().encode('\0\0\0\x1cftypavif\0\0\0\0'),
+  };
+  for (const [type, body] of Object.entries(real)) assert.equal((await files.put({ type, body })).ok, true, type);
+  // A type the app adds itself has no signature to check: the app's own allow-list decides.
+  assert.equal((await memoryFiles({ types: { 'text/csv': 'csv' } }).put({ type: 'text/csv', body: page })).ok, true);
+});
+
+test('notify: a line break in an address or subject is never sent', async () => {
+  const box = outbox();
+  const notify = createNotify({ send: box.send, templates: { t: ({ subject }) => ({ subject, body: 'hi' }) } });
+  assert.deepEqual(await notify.notify({ email: 'me@x.example\r\nBcc: all@x.example' }, 't', { subject: 'Hi' }), { error: 'not-sent', results: [{ channel: 'email', error: 'bad-header' }] });
+  assert.deepEqual(await notify.notify({ email: 'me@x.example' }, 't', { subject: 'Hi\nBcc: x@y.example' }), { error: 'not-sent', results: [{ channel: 'email', error: 'bad-header' }] });
+  assert.deepEqual(box.sent, []);
+  assert.equal((await notify.notify({ email: 'me@x.example', sms: '+13015550100' }, 't', { subject: 'Ready' })).ok, true);
+  assert.equal(box.sent.length, 2);
 });

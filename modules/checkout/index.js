@@ -26,6 +26,9 @@
 const LINE = ({ item, qty, name, unit, cents, total }) => ({ item, qty, name, unit, cents, total });
 const newKey = () => `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
+/** A page's fields without the ones `stages` sets itself (the step, the owner, timestamps). */
+const withoutReserved = (fields, stages) => Object.fromEntries(Object.entries(fields ?? {}).filter(([name]) => !(stages.reserved ?? []).includes(name)));
+
 export function createCheckout({
   store,
   catalog,
@@ -117,7 +120,8 @@ export function createCheckout({
 
       // 4. The orders, and the cart.
       const orders = quoted.orders.map((order) => (quoted.orders.length === 1 && order.group === '' ? key : `${key}/${order.group}`));
-      const started = quoted.orders.map((order, i) => stages.start(orders[i], { ...fields, checkout: key, owner, group: order.group, lines: order.lines, cents: order.cents, fee: order.fee }));
+      const own = withoutReserved(fields, stages);
+      const started = quoted.orders.map((order, i) => stages.start(orders[i], { ...own, checkout: key, owner, group: order.group, lines: order.lines, cents: order.cents, fee: order.fee }));
       const done = store.write(collection, key, { state: 'paid', ref: paid.ref, orders, at: now() });
       await Promise.all([...started, done, cart.clear(owner, lines)]);
 

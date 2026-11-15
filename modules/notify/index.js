@@ -21,6 +21,12 @@ export function createNotify({ send, templates = {} } = {}) {
       const results = [];
       for (const channel of channels) {
         let result;
+        // A line break in an address or a subject is a header of the attacker's own in an
+        // email (`Bcc:`), so neither is sent with one.
+        if (/[\r\n\0]/.test(`${to[channel]}${subject}`)) {
+          results.push({ channel, error: 'bad-header' });
+          continue;
+        }
         try {
           result = await send({ channel, to: to[channel], subject, body });
         } catch (error) {
