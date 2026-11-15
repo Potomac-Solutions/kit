@@ -26,3 +26,9 @@ test('rank bars are sized against the largest, and stay within the track', () =>
   assert.match(html, /Odd[\s\S]*width:0\.0%/);
   assert.match(CHART_CSS, /\.chart \.bar \{ fill: var\(--primary\); \}/);
 });
+
+test('the axis makes room for a long top label', () => {
+  const svg = barChart([{ label: 'Mon', value: 193525 }], { name: 'Takings', format: (c) => `$${(c / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}` });
+  const x = Number(/<text x="([\d.]+)" y="[\d.]+" text-anchor="end" class="tick">\$1,935\.25<\/text>/.exec(svg)[1]);
+  assert.ok(x - 7 * '$1,935.25'.length >= 0, `the label starts inside the chart (ends at ${x})`);
+});
