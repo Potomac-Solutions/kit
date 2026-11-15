@@ -93,4 +93,7 @@ test('by default only the owner advances, only along the steps', async () => {
   const loose = createStages({ store, collection: 'jobs', steps: ['in', 'out'] });
   await loose.start('j1');
   assert.deepEqual(await loose.advance('j1', 'out', { by: 'anyone' }), { error: 'refused' }, 'no owner option: the app decides');
+  // Even when the record has a field named '' (an app that spreads a form into `fields`).
+  await loose.start('j2', { '': 'mallory' });
+  assert.deepEqual(await loose.advance('j2', 'out', { by: 'mallory' }), { error: 'refused' });
 });

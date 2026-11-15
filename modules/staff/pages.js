@@ -10,7 +10,7 @@
 // Routes (all under /staff): sign-in, sign-out, accept (a link), password, people and its posts
 // (invite, reset, role, off, on). `render(res, title, body)` is the app's own page around a body;
 // the HTML uses the class names the platforms' layouts share (panel, notice, ok, hint, button).
-// Every form posts to the app's own origin; refuse cross-site posts before calling `handle`.
+// Every form posts to the app's own origin; `handle` refuses a post from another site itself.
 //
 // Pass the app's `notices` (the kit's `notice`), so the messages these routes leave in an address
 // are signed and the app's own pages show them. Behind a proxy (Railway, Fly, a load balancer), set
@@ -22,6 +22,19 @@ import { createNotices } from '../notice/index.js';
  * The address a request came from. With `proxies` (how many trusted proxies sit in front), the
  * entry they added to X-Forwarded-For; entries further left are whatever the client sent.
  */
+/** Whether a post came from another site: by Sec-Fetch-Site, or else an Origin for another host. */
+export function crossSite(req) {
+  const site = req.headers['sec-fetch-site'];
+  if (site) return site !== 'same-origin' && site !== 'none';
+  const origin = req.headers.origin;
+  if (!origin) return false;
+  try {
+    return origin === 'null' || new URL(origin).host !== req.headers.host;
+  } catch {
+    return true;
+  }
+}
+
 export function clientAddress(req, { proxies = 0 } = {}) {
   const socket = req.socket?.remoteAddress ?? '';
   if (!proxies) return socket;
@@ -120,6 +133,9 @@ ${note(url)}
     const owner = staff.can(who, 'owner');
     if (req.method === 'POST') {
       if (!form) return false;
+      // Another site's form posting here would sign a browser in to the poster's account, or
+      // spread guesses over visitors' browsers: refused, as @zubra/actions refuses them.
+      if (crossSite(req)) return res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' }).end('Forms here are posted from this site only.'), true;
       if (path === at('/sign-in')) {
         const done = await staff.signIn(form.get('email'), form.get('password'), { client: client(req) });
         if (done.error) return back(res, withWord(home, 'problem', done.error === 'locked' ? 'Too many tries. Wait 15 minutes, or ask an owner for a reset link.' : 'That email and password don’t match.')), true;

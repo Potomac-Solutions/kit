@@ -299,3 +299,47 @@ test('a flood of made-up emails doesn’t keep growing what the lockout remember
   await staff.signIn('another@example.com', 'whatever xx');
   assert.equal(staff.remembered(), 1, 'the expired ones were forgotten');
 });
+
+test('guesses sent all at once are counted before any is checked: the lock still holds', async () => {
+  const { staff } = await business({ tries: 5, emailTries: 100 });
+  // 40 guesses at once from one device, the last one right.
+  const guesses = Array.from({ length: 40 }, (_, i) => (i === 39 ? 'correct horse battery' : `wrong one ${i}`));
+  const answers = await Promise.all(guesses.map((password) => staff.signIn('rosa@example.com', password, { client: '203.0.113.9' })));
+  assert.equal(answers.filter((answer) => answer.error === 'wrong').length, 4);
+  assert.equal(answers.at(-1).error, 'locked', 'the right one, sent after five, is not let in');
+  // Spread over many devices, the email-wide count holds the same way.
+  const { staff: other } = await business({ tries: 5, emailTries: 10 });
+  const spread = await Promise.all(Array.from({ length: 30 }, (_, i) => other.signIn('rosa@example.com', i === 29 ? 'correct horse battery' : `nope ${i}`, { client: `10.0.${i}.1` })));
+  assert.equal(spread.filter((answer) => answer.error === 'wrong').length, 9);
+  assert.equal(spread.at(-1).error, 'locked');
+});
+
+test('one IPv6 /64 is one device to the lockout', async () => {
+  const { staff } = await business({ tries: 3, lockMs: 60_000 });
+  for (const host of ['1', '2']) assert.deepEqual(await staff.signIn('rosa@example.com', `nope ${host}`, { client: `2001:db8:7:9::${host}` }), { error: 'wrong' });
+  assert.equal((await staff.signIn('rosa@example.com', 'nope 3', { client: '2001:0db8:0007:0009:ffff::3' })).error, 'locked');
+  assert.equal((await staff.signIn('rosa@example.com', 'correct horse battery', { client: '2001:db8:7:a::1' })).ok, true, 'the next /64 is another device');
+});
+
+test("a stranger's failures lock an email for new devices, not for one that has signed in to it before", async () => {
+  const { staff } = await business({ tries: 3, emailTries: 6, lockMs: 60_000 });
+  assert.equal((await staff.signIn('rosa@example.com', 'correct horse battery', { client: '198.51.100.4' })).ok, true, "Rosa's phone");
+  for (let i = 0; i < 6; i++) await staff.signIn('rosa@example.com', 'nope nope nope', { client: `10.0.0.${i}` });
+  assert.equal((await staff.signIn('rosa@example.com', 'correct horse battery', { client: '192.0.2.77' })).error, 'locked', 'a new device');
+  assert.equal((await staff.signIn('rosa@example.com', 'correct horse battery', { client: '198.51.100.4' })).ok, true, 'her phone still gets in');
+  // Her phone's own guesses are still limited per device.
+  for (let i = 0; i < 2; i++) assert.deepEqual(await staff.signIn('rosa@example.com', `typo ${i}`, { client: '198.51.100.4' }), { error: 'wrong' });
+  assert.equal((await staff.signIn('rosa@example.com', 'typo 3', { client: '198.51.100.4' })).error, 'locked');
+});
+
+test('guesses at the current password, to change it, are limited like sign-in', async () => {
+  const { staff, rosaCookie } = await business({ tries: 3 });
+  const rosa = staff.session(req(rosaCookie));
+  for (let i = 0; i < 3; i++) assert.match((await staff.changePassword(rosa, `guess ${i}`, 'a brand new password')).error, /isn’t right/);
+  assert.match((await staff.changePassword(rosa, 'correct horse battery', 'a brand new password')).error, /Too many tries/);
+});
+
+test('signing in rightly never counts toward the email-wide lock', async () => {
+  const { staff } = await business({ tries: 3, emailTries: 3 });
+  for (let i = 0; i < 4; i++) assert.equal((await staff.signIn('rosa@example.com', 'correct horse battery', { client: `192.0.2.${i}` })).ok, true, `device ${i}`);
+});

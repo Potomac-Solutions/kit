@@ -110,3 +110,13 @@ test('sign-in hands the lockout the address, from the trusted proxy when there i
   await post(staffPages({ staff: fake, render() {}, proxies: 1 }));
   assert.deepEqual(seen, [{ client: '10.0.0.2' }, { client: '203.0.113.9' }]);
 });
+
+test("a post from another site is refused before anything is done: no login CSRF", async () => {
+  const post = (headers) => fetch(`${base}/staff/sign-in`, { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded', ...headers }, body: new URLSearchParams({ email: 'nobody@example.com', password: 'whatever it is' }) });
+  for (const headers of [{ 'sec-fetch-site': 'cross-site' }, { 'sec-fetch-site': 'same-site' }, { origin: 'https://evil.example' }, { origin: 'null' }]) {
+    const response = await post(headers);
+    assert.equal(response.status, 403, JSON.stringify(headers));
+    assert.equal(response.headers.get('set-cookie'), null);
+  }
+  for (const headers of [{ 'sec-fetch-site': 'same-origin' }, { origin: base }, {}]) assert.equal((await post(headers)).status, 303, JSON.stringify(headers));
+});

@@ -23,6 +23,8 @@ export function createHolds({
   // restarts the clock, as the CineStack spike did): choose that only on purpose.
   ceilingMs = 20 * 60_000,
   // The most units one holder can hold in a pool. Infinity lets one person hold everything.
+  // Per holder only: a script that is many holders (no cookie, a new one each time) needs the
+  // app's own limit per address too (see the README).
   max = 8,
   sweepMs = 0,
   names = {},

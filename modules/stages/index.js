@@ -24,7 +24,8 @@ export function createStages({
   stamp = true,
   // Who may advance. By default only the owner, and only along `steps`: side steps (cancel,
   // refund) and records with no `owner` option need the app's own `may`.
-  may = ({ record, to, by }) => Boolean(by) && steps.includes(to) && record[owner] === by,
+  // (With no `owner` option nobody may: `record['']` is a field anyone's form could send.)
+  may = ({ record, to, by }) => Boolean(owner) && Boolean(by) && steps.includes(to) && record[owner] === by,
   now = Date.now,
 } = {}) {
   if (!store || !collection) throw new TypeError('createStages needs a store and a collection');
