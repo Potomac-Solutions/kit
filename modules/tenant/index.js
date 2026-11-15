@@ -45,12 +45,26 @@ export function createTenants({ tenants, fallback = '' } = {}) {
 const TOKEN = /^--[a-z0-9-]+$/;
 // A value may hold what a colour, length or font list holds. Nothing that could close the rule.
 const VALUE = /^[^;{}<>\\]*$/;
+// A value may not fetch anything (an image from another server is a visitor tracked), open a
+// comment (one never closed hides every rule after it), or leave a quote or bracket open.
+const FETCHES = /(?:^|[^\w-])(?:url|image-set|-webkit-image-set|image|cross-fade|element|src|paint)\s*\(/i;
+const balanced = (value) => {
+  let quote = '';
+  let depth = 0;
+  for (const c of value) {
+    if (quote) quote = c === quote ? '' : quote;
+    else if (c === '"' || c === "'") quote = c;
+    else if (c === '(') depth += 1;
+    else if (c === ')' && --depth < 0) return false;
+  }
+  return !quote && depth === 0;
+};
 
 /** A business's theme as one CSS rule. Token names and values that could break out are refused. */
 export function themeCss(tenant, selector = ':root') {
   const lines = [];
   for (const [name, value] of Object.entries(tenant?.theme ?? {})) {
-    if (!TOKEN.test(name) || typeof value !== 'string' || !value.trim() || !VALUE.test(value) || /url\s*\(/i.test(value)) {
+    if (!TOKEN.test(name) || typeof value !== 'string' || !value.trim() || !VALUE.test(value) || FETCHES.test(value) || /\/\*|\*\//.test(value) || !balanced(value)) {
       throw new TypeError(`Theme token ${JSON.stringify(name)} of ${tenant.id} is not a safe CSS custom property`);
     }
     lines.push(`  ${name}: ${value.trim()};`);

@@ -55,10 +55,20 @@ test('a theme becomes one CSS rule, and nothing can break out of it', () => {
   assert.equal(themeCss(list[0]), ':root {\n  --primary: #7a1f1f;\n  --radius: 0.5rem;\n}\n');
   assert.equal(themeCss(list[1]), '');
   assert.equal(themeCss({ id: 'x', theme: { '--font': '"Barlow Condensed", sans-serif' } }, '.shop'), '.shop {\n  --font: "Barlow Condensed", sans-serif;\n}\n');
+  // Ordinary values with brackets and quotes still pass.
+  assert.match(themeCss({ id: 'x', theme: { '--shadow': '0 1px 2px rgb(0 0 0 / 0.2)', '--pad': 'calc(1rem + 2px)', '--font': "'Inter', system-ui", '--grad': 'linear-gradient(90deg, #fff, #000)' } }), /--grad: linear-gradient/);
   for (const theme of [
     { '--primary': 'red; } body { display: none' },
     { '--primary': 'red</style><script>' },
     { '--bg': 'url(https://elsewhere.example/x.png)' },
+    { '--bg': 'image-set("https://elsewhere.example/t.png" 1x)' },
+    { '--bg': '-webkit-image-set(\'x.png\' 1x)' },
+    { '--bg': 'cross-fade(a, b)' },
+    { '--primary': 'red /*' },
+    { '--primary': 'red */' },
+    { '--font': '"Barlow' },
+    { '--size': 'calc(1px + (2px)' },
+    { '--size': '1px)' },
     { color: 'red' },
     { '--primary': '' },
     { '--primary': 12 },
