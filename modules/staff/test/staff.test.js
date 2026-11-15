@@ -343,3 +343,34 @@ test('signing in rightly never counts toward the email-wide lock', async () => {
   const { staff } = await business({ tries: 3, emailTries: 3 });
   for (let i = 0; i < 4; i++) assert.equal((await staff.signIn('rosa@example.com', 'correct horse battery', { client: `192.0.2.${i}` })).ok, true, `device ${i}`);
 });
+
+test("an owner's links die when they stop being an owner", async () => {
+  const { staff, rosa } = await business();
+  // A second owner, so Rosa can be made staff.
+  const second = await staff.accept((await staff.invite(rosa, { email: 'dana@example.com', roles: ['owner'] })).token, { name: 'Dana', password: 'another long password' });
+  const dana = staff.session(req(second.cookie));
+  const invite = (await staff.invite(rosa, { email: 'mallory@example.com', roles: ['owner'] })).token;
+  const sam = await staff.accept((await staff.invite(rosa, { email: 'sam@example.com' })).token, { name: 'Sam', password: 'sams long password' });
+  const reset = (await staff.resetLink(rosa, sam.account)).token;
+  assert.equal((await staff.setRoles(dana, rosa.account, ['staff'])).ok, true);
+  assert.match((await staff.accept(invite, { name: 'Mallory', password: 'mallorys password' })).error, /expired or been used/);
+  assert.match((await staff.accept(reset, { password: 'a new long password' })).error, /expired or been used/);
+  // Links from an owner who still is one work.
+  assert.equal((await staff.accept((await staff.invite(dana, { email: 'lee@example.com' })).token, { name: 'Lee', password: 'lees long password' })).ok, true);
+});
+
+test('a hash made at an older cost is brought up to today’s at the next sign-in', async () => {
+  const { store, staff, rosa } = await business();
+  const before = store.get('accounts', rosa.account).hash;
+  const raised = { ...cost, N: cost.N * 2 };
+  const later = createStaff({ store, cost: raised, now: clock() });
+  assert.equal((await later.signIn('rosa@example.com', 'correct horse battery', { client: '192.0.2.1' })).ok, true);
+  const after = store.get('accounts', rosa.account).hash;
+  assert.notEqual(after, before);
+  assert.match(after, new RegExp(`^scrypt\\$${raised.N}\\$`));
+  assert.equal((await later.signIn('rosa@example.com', 'correct horse battery', { client: '192.0.2.1' })).ok, true, 'and still signs in');
+  // At today's cost already, it is left alone.
+  await later.signIn('rosa@example.com', 'correct horse battery', { client: '192.0.2.1' });
+  assert.equal(store.get('accounts', rosa.account).hash, after);
+  void staff;
+});

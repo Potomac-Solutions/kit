@@ -6,7 +6,7 @@
 //
 //   accounts/<id>          { email, name, roles, hash, disabled, at }
 //   staff-sessions/<hash>  { account, until, ended }      the session id itself is never stored
-//   staff-tokens/<hash>    { kind: 'invite' | 'reset', email, name, roles, account, until, used }
+//   staff-tokens/<hash>    { kind: 'invite' | 'reset', email, name, roles, account, by, until, used }
 //
 // On Sync, use the kit's `serverOnly` as `authorize`: it refuses these to pages entirely, reads
 // included, whatever a scope says.
@@ -234,6 +234,10 @@ export function createStaff({
       // guesses from elsewhere still add up toward the backstop.
       failures.delete(pair);
       if (!trusted) uncount(byEmailFailures, email);
+      // A hash made at an older cost takes another time to check than the decoy's (an unknown
+      // email's), so the time would say which emails have accounts: brought up to today's cost
+      // while the password is at hand.
+      if (!account.hash.startsWith(`scrypt$${cost.N}$${cost.r}$${cost.p}$`)) await store.write('accounts', account.key, { hash: await hashPassword(String(password), cost) });
       const clients = (known.get(email) ?? []).filter((each) => each !== clientKey(client));
       known.set(email, [...clients, clientKey(client)].slice(-KNOWN_CLIENTS));
       return { ok: true, account: account.key, cookie: await startSession(account.key) };
@@ -265,6 +269,9 @@ export function createStaff({
     async accept(raw, form = {}) {
       const found = tokenFor(raw, 'invite') ?? tokenFor(raw, 'reset');
       if (!found) return { error: 'That link has expired or been used. Ask for a new one.' };
+      // A link is the owner's who made it, and dies with that: an owner turned off or made staff
+      // can't still let people in with the links they sent before.
+      if (found.by && !isOwner(fresh({ account: found.by }))) return { error: 'That link has expired or been used. Ask for a new one.' };
       const existing = found.account ? store.get('accounts', found.account) : null;
       const email = found.kind === 'reset' ? existing?.email : found.email || cleanEmail(form.email);
       const name = found.kind === 'reset' ? existing?.name : String(form.name ?? found.name ?? '').trim().slice(0, 80);
@@ -310,7 +317,7 @@ export function createStaff({
       if (!EMAIL.test(email)) return { error: 'Give their email address.' };
       if (!validRoles(given)) return { error: 'Choose what they can do.' };
       if (byEmail(email)) return { error: 'Someone already has an account with that email.' };
-      return { ok: true, token: await issue('invite', { email, name: String(name).trim().slice(0, 80), roles: [...given], account: '' }, tokenMs) };
+      return { ok: true, token: await issue('invite', { email, name: String(name).trim().slice(0, 80), roles: [...given], account: '', by: by.account }, tokenMs) };
     },
 
     /** A one-time link to set a new password, for an owner to send someone who forgot theirs. */
@@ -318,7 +325,7 @@ export function createStaff({
       if (!isOwner(fresh(by))) return { error: 'Only an owner can do that.' };
       const found = store.get('accounts', account);
       if (!found || found.disabled) return { error: 'That isn’t one of your staff.' };
-      return { ok: true, token: await issue('reset', { email: '', name: '', roles: [], account }, tokenMs) };
+      return { ok: true, token: await issue('reset', { email: '', name: '', roles: [], account, by: by.account }, tokenMs) };
     },
 
     /** Change what someone can do. The last owner stays an owner. */
