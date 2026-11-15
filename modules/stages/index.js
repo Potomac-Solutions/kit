@@ -35,6 +35,12 @@ export function createStages({
 
   return {
     steps,
+    /**
+     * The fields this module sets itself: the step, the owner, and each step's timestamp. A
+     * caller passing a page's fields to `start` (checkout, reserve) leaves these out, so a buyer
+     * can't preset who delivers or what step an order is at.
+     */
+    reserved: Object.freeze([field, ...(owner ? [owner] : []), ...known]),
     /** The step a record is at, or null. */
     at: (key) => store.get(collection, key)?.[field] ?? null,
 

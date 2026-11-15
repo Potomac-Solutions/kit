@@ -174,3 +174,15 @@ test('a checkout of something with no limit leaves it with no limit', async () =
   assert.equal((await checkout.place('ada', { key: 'c1', method: CARD })).ok, true);
   assert.equal(store.get('items', 'vale/tour').left, null);
 });
+
+test("a checkout's fields can't preset the driver, the step or a step's time", async () => {
+  const { store, cart, checkout, stages } = await market();
+  await cart.set('mal', 'hill/eggs', 1);
+  const done = await checkout.place('mal', { key: 'c9', method: CARD, fields: { address: '1 Main St', driver: 'mallory', status: 'delivered', delivered: 1 } });
+  const order = store.get('orders', done.orders[0]);
+  assert.equal(order.address, '1 Main St');
+  assert.equal(order.driver, undefined);
+  assert.equal(order.status, 'placed');
+  assert.equal(order.delivered, undefined);
+  assert.deepEqual(await stages.claim(done.orders[0], 'dana'), { ok: true, at: 'claimed' }, 'the real driver claims it');
+});

@@ -26,6 +26,9 @@ import { price as priceOf } from '../price/index.js';
 const natural = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true });
 const newKey = () => `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
+/** A page's fields without the ones `stages` sets itself (the step, the owner, timestamps). */
+const withoutReserved = (fields, stages) => Object.fromEntries(Object.entries(fields ?? {}).filter(([name]) => !(stages.reserved ?? []).includes(name)));
+
 export function createReserve({
   store,
   holds,
@@ -152,6 +155,8 @@ export function createReserve({
       const booking = store.get(collection, key);
       if (!booking) return { error: 'no-booking' };
       if (booking.holder !== holder) return { error: 'not-yours' };
+      // Paid, but the units had gone by the time the payment came back: still not booked.
+      if (booking.state === 'paid' && booking.reason === 'lapsed-after-payment') return { error: 'lapsed-after-payment', key, ref: booking.ref };
       if (booking.state === 'paid') return { ok: true, again: true, key, ref: booking.ref, cents: booking.cents };
       if (booking.state === 'pending') return { error: 'in-progress' };
       if (booking.state === 'released') return { error: 'released' };
@@ -185,7 +190,7 @@ export function createReserve({
         return { error: 'lapsed-after-payment', key, ref: paid.ref };
       }
       await Promise.all([
-        stages.start(key, { ...fields, holder, pools: booking.pools, units: booking.units, lines: booking.lines, cents: booking.cents }),
+        stages.start(key, { ...withoutReserved(fields, stages), holder, pools: booking.pools, units: booking.units, lines: booking.lines, cents: booking.cents }),
         store.write(collection, key, { state: 'paid', ref: paid.ref, until: 0, at: now() }),
       ]);
       return { ok: true, key, ref: paid.ref, cents: booking.cents };

@@ -13,10 +13,22 @@ import { join } from 'node:path';
 export const IMAGES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/avif': 'avif' };
 const ID = /^[0-9a-f]{64}\.[a-z0-9]{1,5}$/;
 
+// What the image types' files start with. A file declared as one of them must be one: an HTML
+// page stored as `image/png` and served back could be a page of the attacker's on the site.
+const ascii = (bytes, at, text) => [...text].every((char, i) => bytes[at + i] === char.charCodeAt(0));
+const SIGNATURES = {
+  'image/png': (b) => [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((byte, i) => b[i] === byte),
+  'image/jpeg': (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  'image/webp': (b) => ascii(b, 0, 'RIFF') && ascii(b, 8, 'WEBP'),
+  'image/avif': (b) => ascii(b, 4, 'ftyp') && (ascii(b, 8, 'avif') || ascii(b, 8, 'avis')),
+  'image/gif': (b) => ascii(b, 0, 'GIF87a') || ascii(b, 0, 'GIF89a'),
+};
+
 function check({ type, body } = {}, { types, maxBytes }) {
   if (!Object.hasOwn(types, type ?? '')) return { error: 'type' };
   if (!(body instanceof Uint8Array) || !body.byteLength) return { error: 'empty' };
   if (body.byteLength > maxBytes) return { error: 'too-big', maxBytes };
+  if (SIGNATURES[type] && !SIGNATURES[type](body)) return { error: 'type' };
   return { id: `${createHash('sha256').update(body).digest('hex')}.${types[type]}` };
 }
 const typeOf = (id, types) => Object.keys(types).find((type) => types[type] === id.slice(id.lastIndexOf('.') + 1));

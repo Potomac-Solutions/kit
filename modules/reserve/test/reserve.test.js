@@ -136,6 +136,8 @@ test('a payment that outlived payMs is paid but not booked, and says so with the
   release();
   assert.deepEqual(await booking, { error: 'lapsed-after-payment', key: 'b1', ref: 'late' });
   assert.equal(store.get('bookings', 'b1').reason, 'lapsed-after-payment');
+  // Asking again doesn't turn it into a booking: the units were never confirmed.
+  assert.deepEqual(await reserve.book('ada', 'b1', { method: CARD }), { error: 'lapsed-after-payment', key: 'b1', ref: 'late' });
   assert.equal(store.get('rentals', 'b1'), null, 'not started');
 });
 
@@ -227,4 +229,14 @@ test('declining card after declining card does not hold a kayak forever', async 
     now.add(60_000);
   }
   assert.equal(holds.taken(SAT).has('k1'), false);
+});
+
+test("a booking's fields can't preset what stages sets itself", async () => {
+  const { reserve, store } = outfitter();
+  await reserve.hold('ada', { key: 'b9', pools: [SAT], units: ['k1'] });
+  assert.equal((await reserve.book('ada', 'b9', { method: CARD, fields: { name: 'Ada', status: 'out', out: 1 } })).ok, true);
+  const rental = store.get('rentals', 'b9');
+  assert.equal(rental.name, 'Ada');
+  assert.equal(rental.status, 'booked', 'not the page\'s "out"');
+  assert.equal(rental.out, undefined, 'nor its timestamp');
 });
