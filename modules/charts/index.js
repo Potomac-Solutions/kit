@@ -17,7 +17,9 @@ const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&':
  */
 export function barChart(points, { name, format = String, height = 180 } = {}) {
   const width = 720;
-  const left = 56;
+  const max0 = Math.max(1, ...points.map((point) => point.value));
+  // Room for the longer axis label ("$1,935.25"), at about 7 units a character.
+  const left = Math.max(56, 14 + 7 * Math.max(String(format(max0)).length, String(format(0)).length));
   const bottom = 26;
   const top = 12;
   const plot = height - top - bottom;
