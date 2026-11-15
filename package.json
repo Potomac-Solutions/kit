@@ -18,6 +18,7 @@
     "./auth": "./modules/auth/index.js",
     "./staff": "./modules/staff/index.js",
     "./staff/pages": "./modules/staff/pages.js",
+    "./customers": "./modules/customers/index.js",
     "./notice": "./modules/notice/index.js",
     "./notify": "./modules/notify/index.js",
     "./files": "./modules/files/index.js",
@@ -26,6 +27,8 @@
     "./checkout": "./modules/checkout/index.js",
     "./reserve": "./modules/reserve/index.js",
     "./tenancy": "./modules/tenancy/index.js",
+    "./reports": "./modules/reports/index.js",
+    "./charts": "./modules/charts/index.js",
     "./components/*": "./components/*"
   },
   "files": [

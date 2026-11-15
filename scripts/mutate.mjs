@@ -8,6 +8,15 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const mutations = [
+  ['charts', 'labels are escaped', "const escape = (value) => String(value ?? '').replace(/[&<>\"']/g,", "const escape = (value) => String(value ?? '').replace(/[]/g,"],
+  ['customers', 'one account per email', "if (byEmail(email)) return { error: 'There’s already an account with that email. Sign in, or reset its password.' };\n      const hash", "const hash"],
+  ['customers', 'the lockout', "if ((mine && mine.count >= tries) || (every && every.count >= emailTries)) return { error: 'locked' };", ''],
+  ['customers', 'a reset link works once', "if (!found || found.used ||", "if (!found ||"],
+  ['customers', 'a reset ends other sessions', "      await endSessions(found.customer);\n", ''],
+  ['customers', 'a turned-off account has no session', "if (!one || one.disabled) return null;\n      return view", "if (!one) return null;\n      return view"],
+  ['reports', 'days in the zone', "timeZone: zone, year", "timeZone: 'UTC', year"],
+  ['reports', 'weeks start Monday', '% 7; // Monday is 0', '* 0; // Monday is 0'],
+  ['reports', 'csv defuses formulas', "if (/^[=+\\-@\\t\\r]/.test(text)) text = `'${text}`;", ''],
   ['hold', 'the taken-unit guard', "if (!mine.has(unit) && all.has(unit)) return { error: 'taken', unit, pool };", ''],
   ['hold', 'expiry on read', "doc?.state === 'held' && doc.until <= at ? FREE", 'false ? FREE'],
   ['hold', 'the sweep', "filter((doc) => doc.state === 'held' && doc.until <= at)", 'filter(() => false)'],

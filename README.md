@@ -38,9 +38,12 @@ Each layer imports only from the layers below it.
 | `kit/pay` | Collect money for an order | New (`pay(order)` from the CineStack plan) | Its own tests only |
 | `kit/auth` | Say who is asking | Both apps' `src/session.js` | Its own tests only |
 | `kit/staff` | The people who run a business: an owner, the staff they invite, passwords, sessions that can be ended, roles; `kit/staff/pages` for their pages and routes | New: every platform faked it with a "sign in on any device" button | Its own tests, attacks included, and the routes over HTTP; 35 mutations |
+| `kit/customers` | A business's customers, with accounts of their own: sign up, sign in with lockout, sessions that end, one-time reset links, turned off by the business | New: every app took a name and email at checkout and forgot them | Its own tests, attacks included |
 | `kit/notice` | Show a page's one-line message only if the server wrote it: signs `?problem=` and `?done=` on redirect, drops unsigned ones on read | New: a link could put any words in a real page's alert box | Its own tests; 3 mutations |
 | `kit/notify` | Tell a person something | New, interface and an outbox | Its own tests only |
 | `kit/files` | Keep a file and return its address | New, interface, memory and disk | Its own tests only |
+| `kit/reports` | Count and total records by day, week or month in the business's time zone, break them down by a key, and write CSV a spreadsheet can't run | New | Its own tests, a daylight saving change included |
+| `kit/charts` | Draw a bar chart or a breakdown on the server as SVG, with a tooltip per bar and the same numbers in a table, on the business's colours | Outfitter's and Front Desk's admin pages | Its own tests; both apps' report pages |
 | `kit/store` | The seam to where documents live (below) | Both apps | Both apps' tests; `syncStore` on `@zubra/sync` 5.8 |
 
 Features, built from the rules:
