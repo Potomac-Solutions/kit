@@ -62,15 +62,15 @@ export async function checkStore(store, assert, collection = 'kit-store-check') 
 export const SERVER_ONLY = Object.freeze(['items', 'carts', 'checkouts', 'payments', 'bookings', 'units', 'holds']);
 
 /**
- * Collections no page may read or write, whatever its scope says: the staff module's accounts
- * (password hashes), sessions and link tokens. `serverOnly` refuses them always.
+ * Collections no page may read or write, whatever its scope says: the staff and customers
+ * modules' accounts (password hashes), sessions and link tokens. `serverOnly` refuses them always.
  */
-export const SECRET = Object.freeze(['accounts', 'staff-sessions', 'staff-tokens']);
+export const SECRET = Object.freeze(['accounts', 'staff-sessions', 'staff-tokens', 'customers', 'customer-sessions', 'customer-tokens']);
 
 /**
  * An `authorize` for `createSyncServer` that refuses a page's changes to the kit's collections.
  * Pages still read them (scoped as you scope them); only the server, through `syncStore`, writes.
- * The `SECRET` collections (staff accounts, sessions, link tokens) are refused to pages entirely.
+ * The `SECRET` collections (staff and customer accounts, sessions, link tokens) are refused to pages entirely.
  * Everything else goes to `next`, your own rule for your own collections.
  *
  *   createSyncServer({ authorize: serverOnly([...SERVER_ONLY, 'orders'], myAuthorize) })
