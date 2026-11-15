@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const mutations = [
+  ['charts', 'labels are escaped', "const escape = (value) => String(value ?? '').replace(/[&<>\"']/g,", "const escape = (value) => String(value ?? '').replace(/[]/g,"],
   ['customers', 'one account per email', "if (byEmail(email)) return { error: 'There’s already an account with that email. Sign in, or reset its password.' };\n      const hash", "const hash"],
   ['customers', 'the lockout', "if ((mine && mine.count >= tries) || (every && every.count >= emailTries)) return { error: 'locked' };", ''],
   ['customers', 'a reset link works once', "if (!found || found.used ||", "if (!found ||"],
