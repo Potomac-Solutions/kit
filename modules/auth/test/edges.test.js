@@ -159,3 +159,20 @@ test('auth: a short secret is refused; secure cookies by default in production',
   assert.match(cookieIn('production'), /; Secure/);
   assert.doesNotMatch(cookieIn('development'), /; Secure/);
 });
+
+test('files: a Blob is refused on its size, and a stream is dropped once it passes the limit', async () => {
+  const files = memoryFiles({ maxBytes: 10 });
+  // A Blob that says it's too big is never read.
+  const big = new Blob([new Uint8Array(11)]);
+  big.arrayBuffer = () => assert.fail('read a Blob that was already too big');
+  assert.deepEqual(await files.put({ type: 'image/png', body: big }), { error: 'too-big', maxBytes: 10 });
+  assert.equal((await files.put({ type: 'image/png', body: new Blob([PNG]) })).ok, true);
+  // A stream stops being read past the limit.
+  let pulled = 0;
+  const endless = new ReadableStream({ pull: (controller) => (pulled++, controller.enqueue(new Uint8Array(4))) });
+  assert.deepEqual(await files.put({ type: 'image/png', body: endless }), { error: 'too-big', maxBytes: 10 });
+  assert.ok(pulled <= 4, `${pulled} chunks read`);
+  // (A stream that fits is read whole and checked like bytes.)
+  const fits = new ReadableStream({ start: (controller) => (controller.enqueue(PNG), controller.close()) });
+  assert.equal((await files.put({ type: 'image/png', body: fits })).ok, true);
+});
