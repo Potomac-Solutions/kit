@@ -319,3 +319,21 @@ test('`invites` lets other roles invite, only to the roles they are allowed to g
   assert.deepEqual(await staff.resetLink(max, samSession.account), { error: 'Only an owner can do that.' });
   assert.throws(() => createStaff({ store: memoryStore(), roles, invites: { manager: ['admin'] } }), /invites/);
 });
+
+test('a hand-off code signs the same person in on a phone, once, for a few minutes', async () => {
+  const { staff, now, rosa, rosaCookie } = await business();
+  assert.deepEqual(await staff.handOff(null), { error: 'Sign in first.' });
+  const { token } = await staff.handOff(rosa);
+  const phone = await staff.takeHandOff(token);
+  assert.equal(phone.ok, true);
+  assert.notEqual(idOf(phone.cookie), idOf(rosaCookie), 'a new session, not the desktop’s');
+  assert.equal(staff.session(req(phone.cookie)).email, 'rosa@example.com');
+  assert.ok((await staff.takeHandOff(token)).error, 'it works once');
+  assert.ok((await staff.takeHandOff('x'.repeat(43))).error);
+  const late = (await staff.handOff(rosa)).token;
+  now.add(5 * 60_000 + 1);
+  assert.ok((await staff.takeHandOff(late)).error, 'five minutes by default');
+  const peeked = (await staff.handOff(rosa)).token;
+  assert.equal(staff.peek(peeked), null, 'it isn’t an invite or reset link');
+  assert.ok((await staff.accept(peeked, { email: 'x@example.com', password: 'correct horse battery' })).error);
+});

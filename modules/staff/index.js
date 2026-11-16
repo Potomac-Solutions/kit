@@ -6,7 +6,7 @@
 //
 //   accounts/<id>          { email, name, roles, hash, disabled, at }
 //   staff-sessions/<hash>  { account, until, ended }      the session id itself is never stored
-//   staff-tokens/<hash>    { kind: 'invite' | 'reset', email, name, roles, account, until, used }
+//   staff-tokens/<hash>    { kind: 'invite' | 'reset' | 'handoff', email, name, roles, account, until, used }
 //
 // On Sync, use the kit's `serverOnly` as `authorize`: it refuses these to pages entirely, reads
 // included, whatever a scope says.
@@ -280,6 +280,26 @@ export function createStaff({
 
     /** Every account, for the owner's staff page. */
     list: () => accounts().map(view).sort((a, b) => a.name.localeCompare(b.name)),
+
+    /**
+     * Carry a signed-in person to their phone: a one-time token for a QR code, good for
+     * `minutes` (5 by default, at most 15). It belongs to `who`'s account and ends with them.
+     */
+    async handOff(who, { minutes = 5 } = {}) {
+      const me = fresh(who);
+      if (!me || me.disabled) return { error: 'Sign in first.' };
+      const ms = Math.min(15, Math.max(1, Number(minutes) || 5)) * 60_000;
+      return { ok: true, token: await issue('handoff', { account: me.account, email: me.email }, ms), until: now() + ms };
+    },
+    /** Use a hand-off token, once: a new session for its account on this device. */
+    async takeHandOff(raw) {
+      const found = tokenFor(raw, 'handoff');
+      if (!found) return { error: 'That code has expired or been used. Make a new one.' };
+      await store.write('staff-tokens', found.key, { used: true, usedAt: now() });
+      const account = store.get('accounts', found.account);
+      if (!account || account.disabled) return { error: 'That code has expired or been used. Make a new one.' };
+      return { ok: true, account: found.account, cookie: await startSession(found.account) };
+    },
 
     /** The roles `who` may give someone they invite; empty if they can't invite. */
     grantable: (who) => canGive(fresh(who)),
