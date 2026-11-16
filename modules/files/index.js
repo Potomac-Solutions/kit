@@ -1,6 +1,6 @@
 // files: keep a file and return its address.
 //
-//   put({ type, body })  →  { ok: true, id } | { error: <code> }
+//   put({ type, body })  →  { ok: true, id } | { error: <code> }   body: bytes, a Blob, or a stream
 //   get(id)              →  { type, body } | null
 //
 // The id is the file's own hash plus an extension, so the same picture stored twice is one file
@@ -24,6 +24,36 @@ const SIGNATURES = {
   'image/gif': (b) => ascii(b, 0, 'GIF87a') || ascii(b, 0, 'GIF89a'),
 };
 
+/**
+ * The body's bytes, read no further than `maxBytes`: a Uint8Array as it is; a Blob (a form's
+ * File) refused on its size before anything is read; a stream or async iterable counted as it
+ * arrives, and dropped the moment it passes the limit, so a large upload is never all in memory.
+ */
+async function bytesOf(body, maxBytes) {
+  if (body instanceof Uint8Array) return body;
+  if (typeof Blob !== 'undefined' && body instanceof Blob) {
+    if (body.size > maxBytes) return { error: 'too-big', maxBytes };
+    return new Uint8Array(await body.arrayBuffer());
+  }
+  const chunks = typeof body?.getReader === 'function' ? body : body?.[Symbol.asyncIterator] ? body : null;
+  if (!chunks) return body;
+  const kept = [];
+  let size = 0;
+  for await (const chunk of chunks) {
+    size += chunk.byteLength;
+    // Leaving the loop cancels the stream: nothing more is read.
+    if (size > maxBytes) return { error: 'too-big', maxBytes };
+    kept.push(chunk);
+  }
+  return new Uint8Array(Buffer.concat(kept));
+}
+
+/** A file with its body read (within the limit), or why not. */
+async function read(file, maxBytes) {
+  const body = await bytesOf(file?.body, maxBytes);
+  return body?.error ? body : { ...file, body };
+}
+
 function check({ type, body } = {}, { types, maxBytes }) {
   if (!Object.hasOwn(types, type ?? '')) return { error: 'type' };
   if (!(body instanceof Uint8Array) || !body.byteLength) return { error: 'empty' };
@@ -37,7 +67,9 @@ const typeOf = (id, types) => Object.keys(types).find((type) => types[type] === 
 export function memoryFiles({ types = IMAGES, maxBytes = 5 * 1024 * 1024 } = {}) {
   const kept = new Map();
   return {
-    async put(file) {
+    async put(given) {
+      const file = await read(given, maxBytes);
+      if (file.error) return file;
       const { id, ...refused } = check(file, { types, maxBytes });
       if (!id) return refused;
       kept.set(id, Buffer.from(file.body));
@@ -51,7 +83,9 @@ export function memoryFiles({ types = IMAGES, maxBytes = 5 * 1024 * 1024 } = {})
 export function diskFiles(dir, { types = IMAGES, maxBytes = 5 * 1024 * 1024 } = {}) {
   mkdirSync(dir, { recursive: true });
   return {
-    async put(file) {
+    async put(given) {
+      const file = await read(given, maxBytes);
+      if (file.error) return file;
       const { id, ...refused } = check(file, { types, maxBytes });
       if (!id) return refused;
       if (!existsSync(join(dir, id))) writeFileSync(join(dir, id), file.body);

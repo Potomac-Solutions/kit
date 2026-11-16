@@ -6,7 +6,7 @@
 //
 //   accounts/<id>          { email, name, roles, hash, disabled, at }
 //   staff-sessions/<hash>  { account, until, ended }      the session id itself is never stored
-//   staff-tokens/<hash>    { kind: 'invite' | 'reset' | 'handoff', email, name, roles, account, until, used }
+//   staff-tokens/<hash>    { kind: 'invite' | 'reset' | 'handoff', email, name, roles, account, by, until, used }
 //
 // On Sync, use the kit's `serverOnly` as `authorize`: it refuses these to pages entirely, reads
 // included, whatever a scope says.
@@ -21,6 +21,7 @@
 // `invites` lets other roles invite too, each only to the roles listed for it:
 // `invites: { manager: ['staff'] }`. An owner can always give any role. Links carry a one-time
 // token; only its hash is stored.
+import { PRODUCTION } from '../auth/index.js';
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { SECRET } from '../store/index.js';
 
@@ -33,6 +34,23 @@ const sha256 = (text) => createHash('sha256').update(text).digest('hex');
 const token = () => randomBytes(32).toString('base64url');
 const cleanEmail = (email) => String(email ?? '').trim().toLowerCase();
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
+/** How many clients per email are remembered as having signed in to it. */
+const KNOWN_CLIENTS = 20;
+
+/**
+ * Whose failures a client's count is: its address, or for IPv6 its /64, which one device holds
+ * all of (and so could otherwise spread its guesses over, or lock out an email from, alone).
+ */
+export function clientKey(client) {
+  const text = String(client ?? '').slice(0, 100).toLowerCase();
+  if (!text.includes(':') || /^::ffff:\d+\.\d+\.\d+\.\d+$/.test(text)) return text.replace(/^::ffff:/, '');
+  const [head, tail = ''] = text.split('%')[0].split('::');
+  const left = head ? head.split(':') : [];
+  const right = text.includes('::') ? (tail ? tail.split(':') : []) : [];
+  const groups = text.includes('::') ? [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right] : left;
+  if (groups.length !== 8 || !groups.every((group) => /^[0-9a-f]{1,4}$/.test(group))) return text;
+  return `${groups.slice(0, 4).map((group) => group.replace(/^0+(?=.)/, '')).join(':')}::/64`;
+}
 
 function scrypt(password, salt, { N, r, p }) {
   return new Promise((resolve, reject) =>
@@ -60,7 +78,7 @@ export function createStaff({
   store,
   roles = [OWNER, 'staff'],
   name = 'staff',
-  secure = false,
+  secure = PRODUCTION,
   sessionMs = 12 * 3_600_000,
   tokenMs = 7 * DAY,
   setupMs = DAY,
@@ -89,7 +107,10 @@ export function createStaff({
   const decoy = hashPassword(token(), cost);
   const failures = new Map(); // `${email} ${client}` → { count, until }
   const byEmailFailures = new Map(); // email → { count, until }
-  const pairOf = (email, client) => `${email} ${String(client ?? '').slice(0, 100)}`;
+  // Clients that signed in to an email before: the email-wide lock stops guesses, not them, so
+  // a stranger's failures can't keep its owner out (a few per email, the latest kept).
+  const known = new Map(); // email → [client]
+  const pairOf = (email, client) => `${email} ${clientKey(client)}`;
   const live = (entry) => (entry && entry.until > now() ? entry : null);
   /** Count one failure in a map; past a size, forget the entries whose time is up. */
   function count(map, key) {
@@ -98,6 +119,13 @@ export function createStaff({
     if (map.size >= 10_000) for (const [k, entry] of map) if (entry.until <= now()) map.delete(k);
     map.set(key, { count: counted, until: now() + lockMs });
     return counted;
+  }
+  /** Take back one failure counted before an attempt that turned out right. */
+  function uncount(map, key) {
+    const entry = live(map.get(key));
+    if (!entry) return;
+    if (entry.count <= 1) map.delete(key);
+    else map.set(key, { ...entry, count: entry.count - 1 });
   }
   /** Forget every failure for an email (its owner proved who they are with a link). */
   function forget(email) {
@@ -202,18 +230,26 @@ export function createStaff({
       const pair = pairOf(email, client);
       const mine = live(failures.get(pair));
       const all = live(byEmailFailures.get(email));
+      const trusted = known.get(email)?.includes(clientKey(client));
       if (mine && mine.count >= tries) return { error: 'locked', until: mine.until };
-      if (all && all.count >= emailTries) return { error: 'locked', until: all.until };
+      if (all && all.count >= emailTries && !trusted) return { error: 'locked', until: all.until };
+      // Counted before the password is checked: a check takes a while, and guesses sent at once
+      // would all have passed the counts above while the first ones were still being checked.
+      const fromHere = count(failures, pair);
+      const everywhere = trusted ? 0 : count(byEmailFailures, email);
       const account = byEmail(email);
       const ok = (await checkPassword(String(password ?? ''), account?.hash ?? (await decoy))) && Boolean(account) && !account.disabled;
-      if (!ok) {
-        const fromHere = count(failures, pair);
-        const everywhere = count(byEmailFailures, email);
-        return fromHere >= tries || everywhere >= emailTries ? { error: 'locked', until: now() + lockMs } : { error: 'wrong' };
-      }
-      // A success clears this client's count. The count across clients stays: guesses from
-      // elsewhere still add up toward the backstop.
+      if (!ok) return fromHere >= tries || everywhere >= emailTries ? { error: 'locked', until: now() + lockMs } : { error: 'wrong' };
+      // A success clears this client's count, and takes back the one it added across clients:
+      // guesses from elsewhere still add up toward the backstop.
       failures.delete(pair);
+      if (!trusted) uncount(byEmailFailures, email);
+      // A hash made at an older cost takes another time to check than the decoy's (an unknown
+      // email's), so the time would say which emails have accounts: brought up to today's cost
+      // while the password is at hand.
+      if (!account.hash.startsWith(`scrypt$${cost.N}$${cost.r}$${cost.p}$`)) await store.write('accounts', account.key, { hash: await hashPassword(String(password), cost) });
+      const clients = (known.get(email) ?? []).filter((each) => each !== clientKey(client));
+      known.set(email, [...clients, clientKey(client)].slice(-KNOWN_CLIENTS));
       return { ok: true, account: account.key, cookie: await startSession(account.key) };
     },
 
@@ -243,6 +279,11 @@ export function createStaff({
     async accept(raw, form = {}) {
       const found = tokenFor(raw, 'invite') ?? tokenFor(raw, 'reset');
       if (!found) return { error: 'That link has expired or been used. Ask for a new one.' };
+      // A link is the person's who made it, and dies with their right to make it: someone turned
+      // off, or no longer allowed to give those roles (or, for a reset, no longer an owner), can't
+      // still let people in with the links they sent before.
+      const maker = found.by ? fresh({ account: found.by }) : null;
+      if (found.by && !(found.kind === 'reset' ? isOwner(maker) : found.roles.every((role) => canGive(maker).includes(role)))) return { error: 'That link has expired or been used. Ask for a new one.' };
       const existing = found.account ? store.get('accounts', found.account) : null;
       const email = found.kind === 'reset' ? existing?.email : found.email || cleanEmail(form.email);
       const name = found.kind === 'reset' ? existing?.name : String(form.name ?? found.name ?? '').trim().slice(0, 80);
@@ -313,7 +354,7 @@ export function createStaff({
       if (!validRoles(given)) return { error: 'Choose what they can do.' };
       if (!given.every((role) => allowed.includes(role))) return { error: 'You can’t give someone that role.' };
       if (byEmail(email)) return { error: 'Someone already has an account with that email.' };
-      return { ok: true, token: await issue('invite', { email, name: String(name).trim().slice(0, 80), roles: [...given], account: '' }, tokenMs) };
+      return { ok: true, token: await issue('invite', { email, name: String(name).trim().slice(0, 80), roles: [...given], account: '', by: by.account }, tokenMs) };
     },
 
     /** A one-time link to set a new password, for an owner to send someone who forgot theirs. */
@@ -321,7 +362,7 @@ export function createStaff({
       if (!isOwner(fresh(by))) return { error: 'Only an owner can do that.' };
       const found = store.get('accounts', account);
       if (!found || found.disabled) return { error: 'That isn’t one of your staff.' };
-      return { ok: true, token: await issue('reset', { email: '', name: '', roles: [], account }, tokenMs) };
+      return { ok: true, token: await issue('reset', { email: '', name: '', roles: [], account, by: by.account }, tokenMs) };
     },
 
     /** Change what someone can do. The last owner stays an owner. */
@@ -357,7 +398,14 @@ export function createStaff({
     async changePassword(who, current, next) {
       const account = who?.account && store.get('accounts', who.account);
       if (!account || account.disabled) return { error: 'Sign in again.' };
+      // Guesses at the current password are counted like sign-in's, per account: a session left
+      // open must not be a way to find the password out.
+      const attempt = `${account.email} change ${who.account}`;
+      const tried = live(failures.get(attempt));
+      if (tried && tried.count >= tries) return { error: 'Too many tries. Wait a while, or ask an owner for a reset link.' };
+      count(failures, attempt);
       if (!(await checkPassword(String(current ?? ''), account.hash))) return { error: 'Your current password isn’t right.' };
+      failures.delete(attempt);
       const problem = passwordProblem(next, account.email);
       if (problem) return { error: problem };
       await store.write('accounts', who.account, { hash: await hashPassword(next, cost), changedAt: now() });

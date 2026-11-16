@@ -4,12 +4,15 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { signedCookie } from '../index.js';
+import { createHmac } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { signedCookie, PRODUCTION } from '../index.js';
+import { createNotices } from '../../notice/index.js';
 import { createNotify, outbox } from '../../notify/index.js';
 import { memoryFiles, diskFiles } from '../../files/index.js';
 
 test('auth: a newcomer gets a cookie, and comes back as the same person', () => {
-  const auth = signedCookie({ secret: 's3cret', name: 'kit_guest' });
+  const auth = signedCookie({ secret: 's3cret xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', name: 'kit_guest' });
   const headers = {};
   const first = auth.ensure({ headers: {} }, { setHeader: (name, value) => (headers[name] = value) });
   assert.match(headers['set-cookie'], /^kit_guest=[^;]+; Path=\/; HttpOnly; SameSite=Lax; Max-Age=2592000$/);
@@ -21,20 +24,20 @@ test('auth: a newcomer gets a cookie, and comes back as the same person', () => 
 });
 
 test('auth: a forged, altered or foreign cookie is nobody', () => {
-  const auth = signedCookie({ secret: 's3cret' });
+  const auth = signedCookie({ secret: 's3cret xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' });
   const good = auth.cookie('abc').split(';')[0];
   assert.equal(auth.read(good).id, 'abc');
   assert.equal(auth.read(good.replace('abc', 'abd')), null, 'a changed id');
   assert.equal(auth.read(`${good}x`), null, 'a changed signature');
   assert.equal(auth.read('session=abc'), null, 'no signature');
   assert.equal(auth.read('session=%E0%A4%A'), null, 'not decodable');
-  assert.equal(auth.read(signedCookie({ secret: 'other' }).cookie('abc')), null, "another secret's cookie");
+  assert.equal(auth.read(signedCookie({ secret: 'other xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' }).cookie('abc')), null, "another secret's cookie");
   assert.equal(auth.read(''), null);
   assert.throws(() => signedCookie({}), /secret/);
 });
 
 test('auth: roles come from the app, and Secure is on when asked', () => {
-  const auth = signedCookie({ secret: 's', secure: true, roles: (id) => (id === 'boss' ? ['manager'] : []) });
+  const auth = signedCookie({ secret: 's xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', secure: true, roles: (id) => (id === 'boss' ? ['manager'] : []) });
   assert.match(auth.cookie('boss'), /; Secure$/);
   assert.deepEqual(auth.read(auth.cookie('boss')).roles, ['manager']);
   assert.deepEqual(auth.read(auth.cookie('guest')).roles, []);
@@ -121,4 +124,55 @@ test('notify: a line break in an address or subject is never sent', async () => 
   assert.deepEqual(box.sent, []);
   assert.equal((await notify.notify({ email: 'me@x.example', sms: '+13015550100' }, 't', { subject: 'Ready' })).ok, true);
   assert.equal(box.sent.length, 2);
+});
+
+test('auth: a cookie stops working maxAge after it was signed, whatever the browser keeps', () => {
+  let t = 1_000_000_000_000;
+  const now = () => t;
+  const auth = signedCookie({ secret: 'k'.repeat(32), maxAge: 100, now });
+  const cookie = auth.cookie('abc').split(';')[0];
+  t += 99_000;
+  assert.equal(auth.read(cookie).id, 'abc');
+  t += 2_000;
+  assert.equal(auth.read(cookie), null, 'copied off a device and kept, it no longer signs anyone in');
+  // A visitor who keeps coming is re-signed past half the time, and keeps their id.
+  const fresh = auth.cookie('kept').split(';')[0];
+  t += 60_000;
+  let set = '';
+  assert.equal(auth.ensure({ headers: { cookie: fresh } }, { setHeader: (_, value) => (set = value) }).id, 'kept');
+  assert.match(set, /^session=kept\./);
+  // The older form (no time) still names its id, and is re-signed.
+  const mac = createHmac('sha256', 'k'.repeat(32)).update('old').digest('base64url');
+  set = '';
+  assert.equal(auth.ensure({ headers: { cookie: `session=old.${mac}` } }, { setHeader: (_, value) => (set = value) }).id, 'old');
+  assert.match(decodeURIComponent(set), /^session=old\.[0-9a-z]+\./);
+  // A time can't be moved: it is signed with the id.
+  const [id, at, sig] = decodeURIComponent(cookie.split('=')[1]).split('.');
+  assert.equal(auth.read(`session=${encodeURIComponent(`${id}.${(Number.parseInt(at, 36) + 50_000).toString(36)}.${sig}`)}`), null);
+});
+
+test('auth: a short secret is refused; secure cookies by default in production', () => {
+  assert.throws(() => signedCookie({ secret: 'x'.repeat(31) }), /at least 32 characters/);
+  assert.throws(() => createNotices({ secret: 'hunter2' }), /at least 32 characters/);
+  assert.equal(PRODUCTION, process.env.NODE_ENV === 'production');
+  const cookieIn = (env) => execFileSync(process.execPath, ['--input-type=module', '-e', `import { signedCookie } from ${JSON.stringify(new URL('../index.js', import.meta.url).href)}; console.log(signedCookie({ secret: 'k'.repeat(32) }).cookie('a'))`], { env: { ...process.env, NODE_ENV: env } }).toString();
+  assert.match(cookieIn('production'), /; Secure/);
+  assert.doesNotMatch(cookieIn('development'), /; Secure/);
+});
+
+test('files: a Blob is refused on its size, and a stream is dropped once it passes the limit', async () => {
+  const files = memoryFiles({ maxBytes: 10 });
+  // A Blob that says it's too big is never read.
+  const big = new Blob([new Uint8Array(11)]);
+  big.arrayBuffer = () => assert.fail('read a Blob that was already too big');
+  assert.deepEqual(await files.put({ type: 'image/png', body: big }), { error: 'too-big', maxBytes: 10 });
+  assert.equal((await files.put({ type: 'image/png', body: new Blob([PNG]) })).ok, true);
+  // A stream stops being read past the limit.
+  let pulled = 0;
+  const endless = new ReadableStream({ pull: (controller) => (pulled++, controller.enqueue(new Uint8Array(4))) });
+  assert.deepEqual(await files.put({ type: 'image/png', body: endless }), { error: 'too-big', maxBytes: 10 });
+  assert.ok(pulled <= 4, `${pulled} chunks read`);
+  // (A stream that fits is read whole and checked like bytes.)
+  const fits = new ReadableStream({ start: (controller) => (controller.enqueue(PNG), controller.close()) });
+  assert.equal((await files.put({ type: 'image/png', body: fits })).ok, true);
 });

@@ -24,6 +24,10 @@ export function createHolds({
   ceilingMs = 20 * 60_000,
   // The most units one holder can hold in a pool. Infinity lets one person hold everything.
   max = 8,
+  // The most units the holders from one client (its address, as the app passes it) can hold in a
+  // pool together. `max` is per holder, and a visitor with no cookie is a new holder every time,
+  // so a script could otherwise hold every unit by being many holders.
+  maxPerClient = 16,
   sweepMs = 0,
   names = {},
   order = natural,
@@ -32,6 +36,9 @@ export function createHolds({
   if (!store) throw new TypeError('createHolds needs a store');
   const N = { units: 'units', holders: 'holds', list: 'units', taken: 'taken', ...names };
   const FREE = { state: 'free', by: '', until: 0 };
+  // Which client holds each held unit (`<pool>/<unit>` → client). Kept here, never in the unit
+  // documents, which pages may read: an address is no one else's business.
+  const clients = new Map();
 
   const unitOf = (key) => key.slice(key.lastIndexOf('/') + 1);
   const poolOf = (key) => key.slice(0, key.lastIndexOf('/'));
@@ -66,12 +73,17 @@ export function createHolds({
    * Check one pool's change for a holder, writing nothing: the units they'd hold after it, or why
    * not. `want` is the whole list they'd hold in that pool.
    */
-  function plan(holder, pool, want, at, { valid, ms = holdMs, ceiling = true, unit: asked } = {}) {
+  function plan(holder, pool, want, at, { valid, ms = holdMs, ceiling = true, unit: asked, client } = {}) {
     const exists = (unit) => !valid || (typeof valid === 'function' ? valid(unit) : valid.has(unit));
     for (const unit of want) if (!unit || unit.includes('/') || !exists(unit)) return { error: 'unknown', unit, pool };
     if (want.size > max) return { error: 'limit', max, unit: asked, pool };
     const all = taken(pool, at);
     const mine = new Set(mineIn(all, holder));
+    if (client) {
+      let others = 0;
+      for (const [unit, held] of all) if (held.state === 'held' && held.by !== holder && clients.get(`${pool}/${unit}`) === client) others += 1;
+      if (others + want.size > maxPerClient) return { error: 'limit', max: maxPerClient, unit: asked, pool };
+    }
     for (const unit of want) {
       if (!mine.has(unit) && all.has(unit)) return { error: 'taken', unit, pool };
     }
@@ -82,14 +94,22 @@ export function createHolds({
       until = at + ms;
       if (ceilingMs) until = Math.min(until, since + ceilingMs + (ceiling ? 0 : ms));
     }
-    return { pool, want, mine, since, until };
+    return { pool, want, mine, since, until, client };
   }
 
   /** Store a checked plan. Called with nothing awaited since `plan`. */
-  function apply(holder, { pool, want, mine, since, until }) {
+  function apply(holder, { pool, want, mine, since, until, client }) {
     const writes = [];
-    for (const unit of want) writes.push(store.write(N.units, `${pool}/${unit}`, { state: 'held', by: holder, until }));
-    for (const unit of mine) if (!want.has(unit)) writes.push(store.write(N.units, `${pool}/${unit}`, FREE));
+    for (const unit of want) {
+      writes.push(store.write(N.units, `${pool}/${unit}`, { state: 'held', by: holder, until }));
+      if (client) clients.set(`${pool}/${unit}`, client);
+      else clients.delete(`${pool}/${unit}`);
+    }
+    for (const unit of mine) {
+      if (want.has(unit)) continue;
+      writes.push(store.write(N.units, `${pool}/${unit}`, FREE));
+      clients.delete(`${pool}/${unit}`);
+    }
     writes.push(store.write(N.holders, `${pool}/${holder}`, summary([...want].sort(order), until, want.size ? since : 0)));
     return writes;
   }
@@ -102,7 +122,7 @@ export function createHolds({
    * Nothing here awaits before the writes are stored, so two holders asking for the same unit
    * can't both get it.
    */
-  async function choose(holder, pool, { toggle, units } = {}, { valid } = {}) {
+  async function choose(holder, pool, { toggle, units } = {}, { valid, client } = {}) {
     if (!holder) return { error: 'no-holder' };
     const at = now();
     let want;
@@ -113,7 +133,7 @@ export function createHolds({
     } else {
       want = new Set((units ?? []).map(String));
     }
-    const checked = plan(holder, pool, want, at, { valid, unit: toggle });
+    const checked = plan(holder, pool, want, at, { valid, unit: toggle, client });
     if (checked.error) {
       const { pool: _, ...refused } = checked;
       return refused;
@@ -129,13 +149,13 @@ export function createHolds({
    * the pool. `ms` holds for longer than `holdMs` (a payment in progress), and may run past the
    * ceiling by at most `ms`.
    */
-  async function chooseAcross(holder, picks, { valid, ms } = {}) {
+  async function chooseAcross(holder, picks, { valid, ms, client } = {}) {
     if (!holder) return { error: 'no-holder' };
     if (!picks?.length) return { error: 'nothing' };
     const at = now();
     const plans = [];
     for (const { pool, units } of picks) {
-      const checked = plan(holder, pool, new Set((units ?? []).map(String)), at, { valid: typeof valid === 'function' && valid.length > 1 ? (unit) => valid(unit, pool) : valid, ...(ms ? { ms, ceiling: false } : {}) });
+      const checked = plan(holder, pool, new Set((units ?? []).map(String)), at, { valid: typeof valid === 'function' && valid.length > 1 ? (unit) => valid(unit, pool) : valid, client, ...(ms ? { ms, ceiling: false } : {}) });
       if (checked.error) return checked;
       plans.push(checked);
     }
@@ -162,6 +182,7 @@ export function createHolds({
     }
     if (!mine.length) return { error: 'nothing-held' };
     const writes = mine.map((unit) => store.write(N.units, `${pool}/${unit}`, { state: N.taken, by: holder, until: 0 }));
+    for (const unit of mine) clients.delete(`${pool}/${unit}`);
     const rest = live.units.filter((unit) => !mine.includes(unit));
     writes.push(store.write(N.holders, `${pool}/${holder}`, summary(rest, rest.length ? live.until : 0, rest.length ? store.get(N.holders, `${pool}/${holder}`)?.since ?? 0 : 0)));
     await Promise.all(writes);

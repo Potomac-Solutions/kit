@@ -99,6 +99,13 @@ test('the client address: the socket, or with proxies the entry the proxy added'
   assert.equal(clientAddress(req('6.6.6.6, 203.0.113.9'), { proxies: 1 }), '203.0.113.9', 'what the client sent itself is ignored');
   assert.equal(clientAddress(req('6.6.6.6, 203.0.113.9, 10.1.1.1'), { proxies: 2 }), '203.0.113.9');
   assert.equal(clientAddress(req(''), { proxies: 1 }), '10.0.0.2');
+  // A connection from a public address came straight to the app, past the proxy: its header is its own.
+  const direct = { socket: { remoteAddress: '198.51.100.7' }, headers: { 'x-forwarded-for': 'anything-i-like' } };
+  assert.equal(clientAddress(direct, { proxies: 1 }), '198.51.100.7');
+  assert.equal(clientAddress(direct, { proxies: 1, trust: () => true }), 'anything-i-like', 'unless the app says that address is its proxy');
+  for (const proxy of ['127.0.0.1', '::1', '::ffff:10.0.0.9', '172.20.1.1', 'fd12:3456::1']) assert.equal(clientAddress({ socket: { remoteAddress: proxy }, headers: { 'x-forwarded-for': '203.0.113.9' } }, { proxies: 1 }), '203.0.113.9', proxy);
+  // `proxies` set higher than there are: the client, not the proxy for everyone.
+  assert.equal(clientAddress(req('203.0.113.9'), { proxies: 2 }), '203.0.113.9');
 });
 
 test('sign-in hands the lockout the address, from the trusted proxy when there is one', async () => {
@@ -109,4 +116,14 @@ test('sign-in hands the lockout the address, from the trusted proxy when there i
   await post(staffPages({ staff: fake, render() {} }));
   await post(staffPages({ staff: fake, render() {}, proxies: 1 }));
   assert.deepEqual(seen, [{ client: '10.0.0.2' }, { client: '203.0.113.9' }]);
+});
+
+test("a post from another site is refused before anything is done: no login CSRF", async () => {
+  const post = (headers) => fetch(`${base}/staff/sign-in`, { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded', ...headers }, body: new URLSearchParams({ email: 'nobody@example.com', password: 'whatever it is' }) });
+  for (const headers of [{ 'sec-fetch-site': 'cross-site' }, { 'sec-fetch-site': 'same-site' }, { origin: 'https://evil.example' }, { origin: 'null' }]) {
+    const response = await post(headers);
+    assert.equal(response.status, 403, JSON.stringify(headers));
+    assert.equal(response.headers.get('set-cookie'), null);
+  }
+  for (const headers of [{ 'sec-fetch-site': 'same-origin' }, { origin: base }, {}]) assert.equal((await post(headers)).status, 303, JSON.stringify(headers));
 });

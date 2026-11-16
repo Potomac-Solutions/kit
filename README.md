@@ -36,12 +36,12 @@ Each layer imports only from the layers below it.
 | `kit/tenancy` | Keep each business's documents apart: one Sync log each, its sync traffic routed by host | New | Two businesses on one HTTP server, a SQLite file each: pull, push and the live stream |
 | `kit/price` | Turn an item and a context into a price | New | Its own tests only |
 | `kit/pay` | Collect money for an order | New (`pay(order)` from the CineStack plan) | Its own tests only |
-| `kit/auth` | Say who is asking | Both apps' `src/session.js` | Its own tests only |
+| `kit/auth` | Say who is asking: a signed cookie (`signedCookie`) whose secret is at least 32 characters, whose signing time is signed with it (so a copied cookie stops working after `maxAge`; `ensure` re-signs a returning visitor), and `Secure` by default when `NODE_ENV` is `production` (as in `staff` and `customers`) | Both apps' `src/session.js` | Its own tests only |
 | `kit/staff` | The people who run a business: an owner, the staff they invite, passwords, sessions that can be ended, roles; `kit/staff/pages` for their pages and routes | New: every platform faked it with a "sign in on any device" button | Its own tests, attacks included, and the routes over HTTP; 35 mutations |
 | `kit/customers` | A business's customers, with accounts of their own: sign up, sign in with lockout, sessions that end, one-time reset links, turned off by the business | New: every app took a name and email at checkout and forgot them | Its own tests, attacks included |
 | `kit/notice` | Show a page's one-line message only if the server wrote it: signs `?problem=` and `?done=` on redirect, drops unsigned ones on read | New: a link could put any words in a real page's alert box | Its own tests; 3 mutations |
 | `kit/notify` | Tell a person something | New, interface and an outbox | Its own tests only |
-| `kit/files` | Keep a file and return its address | New, interface, memory and disk | Its own tests only |
+| `kit/files` | Keep a file and return its address. `put({ type, body })` takes bytes, a Blob (a form's File: refused on its size before it is read) or a stream (dropped the moment it passes `maxBytes`) | New, interface, memory and disk | Its own tests only |
 | `kit/reports` | Count and total records by day, week or month in the business's time zone, break them down by a key, and write CSV a spreadsheet can't run | New | Its own tests, a daylight saving change included |
 | `kit/charts` | Draw a bar chart or a breakdown on the server as SVG, with a tooltip per bar and the same numbers in a table, on the business's colours | Outfitter's and Front Desk's admin pages | Its own tests; both apps' report pages |
 | `kit/store` | The seam to where documents live (below) | Both apps | Both apps' tests; `syncStore` on `@zubra/sync` 5.8 |
@@ -109,7 +109,7 @@ await reserve.book(guest.pub, key, { method, fields: { phone } });           // 
 
 `book` checks every hold is still live, keeps them through the payment (`payMs`), charges the price shown when they were held, then confirms the units in every pool and starts the booking. A declined card confirms nothing; the holds run out on their own and it can be tried again while they last. CineStack's seats are one pool and a list of seats.
 
-Holds are bounded by default: one holder holds at most 8 units in a pool (`max`), for at most 20 minutes from their first hold (`ceilingMs`), and the payment window can run past that once, by at most `payMs`, so retrying a declined card doesn't keep stock forever. A unit id can't contain `/`. Pass `ceilingMs: 0` or `max: Infinity` only on purpose.
+Holds are bounded by default: one holder holds at most 8 units in a pool (`max`), for at most 20 minutes from their first hold (`ceilingMs`), and the payment window can run past that once, by at most `payMs`, so retrying a declined card doesn't keep stock forever. A unit id can't contain `/`. Pass `ceilingMs: 0` or `max: Infinity` only on purpose. Both are per *holder*, and a visitor without a cookie is a new holder on every request (`auth.ensure`), so pass the request's address as `client` (`choose(holder, pool, picks, { client })`, `chooseAcross`, `reserve.hold(holder, { client })`; `clientAddress` from `kit/staff/pages` reads it): the holders from one client hold at most `maxPerClient` (16) units in a pool together. The address stays in the server's memory, never in the unit documents pages read.
 
 `stages` lets only the record's `owner` advance it, and only along `steps`. Side steps from `from` (cancel, refund), and records with no `owner` option, need the app's own `may({ record, to, by })`: the kit doesn't know who your managers are.
 ## Many businesses on one deployment
@@ -228,13 +228,13 @@ await staff.invite(who, { email, roles: ['staff'] });   // { ok, token }: send t
 await staff.accept(token, { name, password });          // makes the account (or sets a new password), signs in
 ```
 
-- **Passwords:** scrypt, salted, the cost kept with the hash; at least 10 characters, not the email.
-- **Sign-in:** one answer (`wrong`) for an unknown email and a wrong password, and the same work for both, so neither the answer nor the time says whether an email has an account. Five failures from one device's address lock *that address* out of the email for 15 minutes, so someone guessing can't lock the real person out from their own phone. A hundred failures from anywhere lock the email for everyone (`emailTries`), as a backstop against guessing from many addresses. A used reset link clears both.
+- **Passwords:** scrypt, salted, the cost kept with the hash, and a hash made at an older cost re-made at today's at the next sign-in (so check times don't say which emails have accounts); at least 10 characters, not the email.
+- **Sign-in:** one answer (`wrong`) for an unknown email and a wrong password, and the same work for both, so neither the answer nor the time says whether an email has an account. Five failures from one device's address (for IPv6, its /64) lock *that address* out of the email for 15 minutes, so someone guessing can't lock the real person out from their own phone. A hundred failures from anywhere lock the email for new devices (`emailTries`), as a backstop against guessing from many addresses; a device that has signed in to it before still gets in with the right password. Each attempt is counted before its password is checked, so guesses sent all at once are held to the same limits. A used reset link clears both. Guesses at the current password, to change it, are limited the same way.
 - **Sessions:** a fresh random id at every sign-in, so one can't be planted. Only its hash is stored. `HttpOnly`, `SameSite=Lax`, and `__Host-` with `Secure` over https. They end on sign-out, on a password change or reset (the others), and when an owner turns the account off.
-- **Links:** invites, resets and the first owner's setup link are one-time tokens that expire, stored as hashes. The setup link works only while the business has nobody. Two links used at the same moment can't make two accounts for one email, or two first owners.
+- **Links:** invites, resets and the first owner's setup link are one-time tokens that expire, stored as hashes. An invite or reset link works only while the owner who made it still is one. The setup link works only while the business has nobody. Two links used at the same moment can't make two accounts for one email, or two first owners.
 - **Roles:** an owner can do everything, and the business always keeps one. Owner actions check the account as stored, not the roles a session claims.
 
-`kit/staff/pages` is the staff side every platform needs, on top of that: the sign-in page, the link page (setup, invite, reset), People for owners (invite, reset links, roles, turning people off) and Your password, with their routes under `/staff`. Link pages send `Referrer-Policy: no-referrer` and `Cache-Control: no-store`, so a token doesn't leave in a `Referer` header or sit in a cache.
+`kit/staff/pages` is the staff side every platform needs, on top of that: the sign-in page, the link page (setup, invite, reset), People for owners (invite, reset links, roles, turning people off) and Your password, with their routes under `/staff`. A post from another site (by `Sec-Fetch-Site`, or an `Origin` for another host) is refused with a 403 before anything is done, so another page can't sign a browser in to its own account. Link pages send `Referrer-Policy: no-referrer` and `Cache-Control: no-store`, so a token doesn't leave in a `Referer` header or sit in a cache.
 
 ```js
 import { staffPages } from '@potomac-solutions/kit/staff/pages';
@@ -246,7 +246,7 @@ if (!staff.can(staff.session(req), 'staff')) return page(res, 'Sign in', pages.s
 ```
 
 - `notices` signs the messages these routes leave in an address and reads them on the sign-in page. Pass the app's own, so its pages show them too.
-- `proxies` is how many proxies in front add to `X-Forwarded-For` (one on Railway or Fly). Sign-in takes the address from the entry they added, never from what the client sent; with `0` it is the socket's.
+- `proxies` is how many proxies in front add to `X-Forwarded-For` (one on Railway or Fly). Sign-in takes the address from the entry they added, never from what the client sent; with `0` it is the socket's. The header is believed only when the connection comes from a loopback or private address, where a proxy connects from (a request that reaches the app directly keeps its socket's address); a platform whose proxy connects from a public address needs `client: (req) => clientAddress(req, { proxies: 1, trust: (address) => … })`. If the header has fewer entries than `proxies`, its first entry is used rather than the proxy's own address, which would make every visitor one client.
 
 ## Messages after a form
 
@@ -268,7 +268,8 @@ const { problem, done } = notices.read(url);   // '' unless signed here; escape 
 - **A payment that outlives `payMs` (2 minutes by default) is paid but not booked.** `book` answers `lapsed-after-payment` with the provider's `ref`, so the app can refund; the kit doesn't refund.
 - **The sweep reads every unit document.** Fine for one theatre's evening; needs an index on `until` beyond that.
 - **`auth` and `staff` use `node:crypto`,** so they do not run on Workers yet.
-- **Staff lockouts are kept in the process.** They reset when it restarts, and several processes count apart. Someone guessing from many addresses can still reach the per-email backstop (100 failures); a reset link clears it.
+- **Secrets of at least 32 characters, from this release.** `signedCookie` and `createNotices` refuse a shorter one at start-up. Cookies `signedCookie` signed before keep their id and are re-signed by `ensure`; until then they carry no time.
+- **Staff lockouts are kept in the process.** They reset when it restarts, and several processes count apart. Someone guessing from many addresses can still reach the per-email backstop (100 failures), which then keeps out a device that never signed in to that email, the only owner's new phone included; a reset link clears it, and the devices it knows are forgotten on a restart.
 - **Each sign-in costs a password hash** (about 50 ms of CPU at the default cost), so a flood is a load problem: put a rate limit in front of the sign-in route (the platform's proxy, or the app). The lockout forgets expired entries once it remembers 10,000.
 - **The kit sends no email.** An invite or reset is a link the owner passes on (or the app sends with `notify`). No two-factor sign-in yet.
 - **A checkout left pending stays pending.** If the server stops between taking stock and hearing from the provider, the stock stays taken and the checkout says `pending`. Nothing sweeps it yet; the provider's own record (keyed by the checkout) says whether money moved.

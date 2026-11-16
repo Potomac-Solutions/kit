@@ -300,6 +300,81 @@ test('a flood of made-up emails doesn’t keep growing what the lockout remember
   assert.equal(staff.remembered(), 1, 'the expired ones were forgotten');
 });
 
+test('guesses sent all at once are counted before any is checked: the lock still holds', async () => {
+  const { staff } = await business({ tries: 5, emailTries: 100 });
+  // 40 guesses at once from one device, the last one right.
+  const guesses = Array.from({ length: 40 }, (_, i) => (i === 39 ? 'correct horse battery' : `wrong one ${i}`));
+  const answers = await Promise.all(guesses.map((password) => staff.signIn('rosa@example.com', password, { client: '203.0.113.9' })));
+  assert.equal(answers.filter((answer) => answer.error === 'wrong').length, 4);
+  assert.equal(answers.at(-1).error, 'locked', 'the right one, sent after five, is not let in');
+  // Spread over many devices, the email-wide count holds the same way.
+  const { staff: other } = await business({ tries: 5, emailTries: 10 });
+  const spread = await Promise.all(Array.from({ length: 30 }, (_, i) => other.signIn('rosa@example.com', i === 29 ? 'correct horse battery' : `nope ${i}`, { client: `10.0.${i}.1` })));
+  assert.equal(spread.filter((answer) => answer.error === 'wrong').length, 9);
+  assert.equal(spread.at(-1).error, 'locked');
+});
+
+test('one IPv6 /64 is one device to the lockout', async () => {
+  const { staff } = await business({ tries: 3, lockMs: 60_000 });
+  for (const host of ['1', '2']) assert.deepEqual(await staff.signIn('rosa@example.com', `nope ${host}`, { client: `2001:db8:7:9::${host}` }), { error: 'wrong' });
+  assert.equal((await staff.signIn('rosa@example.com', 'nope 3', { client: '2001:0db8:0007:0009:ffff::3' })).error, 'locked');
+  assert.equal((await staff.signIn('rosa@example.com', 'correct horse battery', { client: '2001:db8:7:a::1' })).ok, true, 'the next /64 is another device');
+});
+
+test("a stranger's failures lock an email for new devices, not for one that has signed in to it before", async () => {
+  const { staff } = await business({ tries: 3, emailTries: 6, lockMs: 60_000 });
+  assert.equal((await staff.signIn('rosa@example.com', 'correct horse battery', { client: '198.51.100.4' })).ok, true, "Rosa's phone");
+  for (let i = 0; i < 6; i++) await staff.signIn('rosa@example.com', 'nope nope nope', { client: `10.0.0.${i}` });
+  assert.equal((await staff.signIn('rosa@example.com', 'correct horse battery', { client: '192.0.2.77' })).error, 'locked', 'a new device');
+  assert.equal((await staff.signIn('rosa@example.com', 'correct horse battery', { client: '198.51.100.4' })).ok, true, 'her phone still gets in');
+  // Her phone's own guesses are still limited per device.
+  for (let i = 0; i < 2; i++) assert.deepEqual(await staff.signIn('rosa@example.com', `typo ${i}`, { client: '198.51.100.4' }), { error: 'wrong' });
+  assert.equal((await staff.signIn('rosa@example.com', 'typo 3', { client: '198.51.100.4' })).error, 'locked');
+});
+
+test('guesses at the current password, to change it, are limited like sign-in', async () => {
+  const { staff, rosaCookie } = await business({ tries: 3 });
+  const rosa = staff.session(req(rosaCookie));
+  for (let i = 0; i < 3; i++) assert.match((await staff.changePassword(rosa, `guess ${i}`, 'a brand new password')).error, /isn’t right/);
+  assert.match((await staff.changePassword(rosa, 'correct horse battery', 'a brand new password')).error, /Too many tries/);
+});
+
+test('signing in rightly never counts toward the email-wide lock', async () => {
+  const { staff } = await business({ tries: 3, emailTries: 3 });
+  for (let i = 0; i < 4; i++) assert.equal((await staff.signIn('rosa@example.com', 'correct horse battery', { client: `192.0.2.${i}` })).ok, true, `device ${i}`);
+});
+
+test("an owner's links die when they stop being an owner", async () => {
+  const { staff, rosa } = await business();
+  // A second owner, so Rosa can be made staff.
+  const second = await staff.accept((await staff.invite(rosa, { email: 'dana@example.com', roles: ['owner'] })).token, { name: 'Dana', password: 'another long password' });
+  const dana = staff.session(req(second.cookie));
+  const invite = (await staff.invite(rosa, { email: 'mallory@example.com', roles: ['owner'] })).token;
+  const sam = await staff.accept((await staff.invite(rosa, { email: 'sam@example.com' })).token, { name: 'Sam', password: 'sams long password' });
+  const reset = (await staff.resetLink(rosa, sam.account)).token;
+  assert.equal((await staff.setRoles(dana, rosa.account, ['staff'])).ok, true);
+  assert.match((await staff.accept(invite, { name: 'Mallory', password: 'mallorys password' })).error, /expired or been used/);
+  assert.match((await staff.accept(reset, { password: 'a new long password' })).error, /expired or been used/);
+  // Links from an owner who still is one work.
+  assert.equal((await staff.accept((await staff.invite(dana, { email: 'lee@example.com' })).token, { name: 'Lee', password: 'lees long password' })).ok, true);
+});
+
+test('a hash made at an older cost is brought up to today’s at the next sign-in', async () => {
+  const { store, staff, rosa } = await business();
+  const before = store.get('accounts', rosa.account).hash;
+  const raised = { ...cost, N: cost.N * 2 };
+  const later = createStaff({ store, cost: raised, now: clock() });
+  assert.equal((await later.signIn('rosa@example.com', 'correct horse battery', { client: '192.0.2.1' })).ok, true);
+  const after = store.get('accounts', rosa.account).hash;
+  assert.notEqual(after, before);
+  assert.match(after, new RegExp(`^scrypt\\$${raised.N}\\$`));
+  assert.equal((await later.signIn('rosa@example.com', 'correct horse battery', { client: '192.0.2.1' })).ok, true, 'and still signs in');
+  // At today's cost already, it is left alone.
+  await later.signIn('rosa@example.com', 'correct horse battery', { client: '192.0.2.1' });
+  assert.equal(store.get('accounts', rosa.account).hash, after);
+  void staff;
+});
+
 test('`invites` lets other roles invite, only to the roles they are allowed to give', async () => {
   const roles = ['owner', 'manager', 'staff'];
   const { staff, rosa } = await business({ roles, invites: { manager: ['staff'] } });
@@ -336,4 +411,16 @@ test('a hand-off code signs the same person in on a phone, once, for a few minut
   const peeked = (await staff.handOff(rosa)).token;
   assert.equal(staff.peek(peeked), null, 'it isn’t an invite or reset link');
   assert.ok((await staff.accept(peeked, { email: 'x@example.com', password: 'correct horse battery' })).error);
+});
+
+test('a manager’s invite link dies when they can no longer give that role', async () => {
+  const roles = ['owner', 'manager', 'staff'];
+  const { staff, rosa } = await business({ roles, invites: { manager: ['staff'] } });
+  const m = await staff.invite(rosa, { email: 'max@example.com', name: 'Max', roles: ['manager'] });
+  const max = staff.session(req((await staff.accept(m.token, { name: 'Max', password: 'correct horse battery' })).cookie));
+  const fine = await staff.invite(max, { email: 'ann@example.com', roles: ['staff'] });
+  const dead = await staff.invite(max, { email: 'bo@example.com', roles: ['staff'] });
+  assert.equal((await staff.accept(fine.token, { name: 'Ann', password: 'correct horse battery' })).ok, true, 'a manager’s link works');
+  await staff.setRoles(rosa, max.account, ['staff']);
+  assert.ok((await staff.accept(dead.token, { name: 'Bo', password: 'correct horse battery' })).error, 'demoted: their old links stop');
 });

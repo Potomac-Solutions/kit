@@ -12,12 +12,16 @@
 // The signature covers the messages, not the path: a message the server wrote is safe to show on
 // any of its pages. Escape what `read` returns, as with any text.
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { checkSecret } from '../auth/index.js';
 
 export function createNotices({ secret, keys = ['problem', 'done'], param = 'sig', max = 200 } = {}) {
-  if (!secret) throw new TypeError('createNotices needs a secret');
+  checkSecret(secret, 'createNotices');
+  // The secret's own bytes (a Buffer turned into text would lose some, and two could match), and
+  // the messages as a JSON list, so no message can move the line between two (`a\ndone=b`).
+  const key = Buffer.concat([Buffer.from('notice:'), Buffer.isBuffer(secret) || secret instanceof Uint8Array ? Buffer.from(secret) : Buffer.from(String(secret))]);
   const mac = (url) =>
-    createHmac('sha256', `notice:${secret}`)
-      .update(keys.map((key) => `${key}=${url.searchParams.get(key) ?? ''}`).join('\n'))
+    createHmac('sha256', key)
+      .update(JSON.stringify(keys.map((name) => [name, url.searchParams.get(name) ?? ''])))
       .digest('base64url')
       .slice(0, 22);
   const has = (url) => keys.some((key) => url.searchParams.has(key));
