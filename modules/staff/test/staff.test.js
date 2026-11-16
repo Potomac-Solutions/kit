@@ -374,3 +374,53 @@ test('a hash made at an older cost is brought up to today’s at the next sign-i
   assert.equal(store.get('accounts', rosa.account).hash, after);
   void staff;
 });
+
+test('`invites` lets other roles invite, only to the roles they are allowed to give', async () => {
+  const roles = ['owner', 'manager', 'staff'];
+  const { staff, rosa } = await business({ roles, invites: { manager: ['staff'] } });
+  assert.deepEqual(staff.grantable(rosa), roles, 'an owner can always give any role');
+  const made = await staff.accept((await staff.invite(rosa, { email: 'max@example.com', roles: ['manager'] })).token, { name: 'Max', password: 'a long password 1' });
+  const max = staff.session(req(made.cookie));
+  assert.deepEqual(staff.grantable(max), ['staff']);
+  assert.deepEqual(await staff.invite(max, { email: 'boss@example.com', roles: ['owner'] }), { error: 'You can’t give someone that role.' });
+  assert.deepEqual(await staff.invite(max, { email: 'mo@example.com', roles: ['manager'] }), { error: 'You can’t give someone that role.' });
+  const sam = await staff.invite(max, { email: 'sam@example.com', name: 'Sam', roles: ['staff'] });
+  assert.equal(sam.ok, true);
+  const samSession = staff.session(req((await staff.accept(sam.token, { name: 'Sam', password: 'a long password 2' })).cookie));
+  assert.deepEqual(staff.grantable(samSession), []);
+  assert.deepEqual(await staff.invite(samSession, { email: 'x@example.com', roles: ['staff'] }), { error: 'Only an owner can invite people.' });
+  assert.deepEqual(staff.grantable(null), []);
+  // Everything else stays the owner's: a manager can't reset passwords or change roles.
+  assert.deepEqual(await staff.resetLink(max, samSession.account), { error: 'Only an owner can do that.' });
+  assert.throws(() => createStaff({ store: memoryStore(), roles, invites: { manager: ['admin'] } }), /invites/);
+});
+
+test('a hand-off code signs the same person in on a phone, once, for a few minutes', async () => {
+  const { staff, now, rosa, rosaCookie } = await business();
+  assert.deepEqual(await staff.handOff(null), { error: 'Sign in first.' });
+  const { token } = await staff.handOff(rosa);
+  const phone = await staff.takeHandOff(token);
+  assert.equal(phone.ok, true);
+  assert.notEqual(idOf(phone.cookie), idOf(rosaCookie), 'a new session, not the desktop’s');
+  assert.equal(staff.session(req(phone.cookie)).email, 'rosa@example.com');
+  assert.ok((await staff.takeHandOff(token)).error, 'it works once');
+  assert.ok((await staff.takeHandOff('x'.repeat(43))).error);
+  const late = (await staff.handOff(rosa)).token;
+  now.add(5 * 60_000 + 1);
+  assert.ok((await staff.takeHandOff(late)).error, 'five minutes by default');
+  const peeked = (await staff.handOff(rosa)).token;
+  assert.equal(staff.peek(peeked), null, 'it isn’t an invite or reset link');
+  assert.ok((await staff.accept(peeked, { email: 'x@example.com', password: 'correct horse battery' })).error);
+});
+
+test('a manager’s invite link dies when they can no longer give that role', async () => {
+  const roles = ['owner', 'manager', 'staff'];
+  const { staff, rosa } = await business({ roles, invites: { manager: ['staff'] } });
+  const m = await staff.invite(rosa, { email: 'max@example.com', name: 'Max', roles: ['manager'] });
+  const max = staff.session(req((await staff.accept(m.token, { name: 'Max', password: 'correct horse battery' })).cookie));
+  const fine = await staff.invite(max, { email: 'ann@example.com', roles: ['staff'] });
+  const dead = await staff.invite(max, { email: 'bo@example.com', roles: ['staff'] });
+  assert.equal((await staff.accept(fine.token, { name: 'Ann', password: 'correct horse battery' })).ok, true, 'a manager’s link works');
+  await staff.setRoles(rosa, max.account, ['staff']);
+  assert.ok((await staff.accept(dead.token, { name: 'Bo', password: 'correct horse battery' })).error, 'demoted: their old links stop');
+});
