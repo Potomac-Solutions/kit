@@ -18,7 +18,9 @@
 //
 // The first owner comes from a setup link (`setup()`), which works only while the business has
 // no accounts. After that, an owner invites people (`invite`) and resets passwords (`resetLink`).
-// Links carry a one-time token; only its hash is stored.
+// `invites` lets other roles invite too, each only to the roles listed for it:
+// `invites: { manager: ['staff'] }`. An owner can always give any role. Links carry a one-time
+// token; only its hash is stored.
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { SECRET } from '../store/index.js';
 
@@ -71,10 +73,15 @@ export function createStaff({
   lockMs = 15 * 60_000,
   minPassword = 10,
   cost = { N: 2 ** 15, r: 8, p: 1 },
+  // Which roles may invite, and to which roles: `{ manager: ['staff'] }`. Owners always may, to any.
+  invites = {},
   now = Date.now,
 } = {}) {
   if (!store) throw new TypeError('createStaff needs a store');
   if (!roles.includes(OWNER)) throw new TypeError(`createStaff's roles must include "${OWNER}"`);
+  for (const [role, given] of Object.entries(invites)) {
+    if (!roles.includes(role) || !Array.isArray(given) || !given.every((one) => roles.includes(one))) throw new TypeError('createStaff\'s invites name roles it doesn\'t have');
+  }
   if (!/^[A-Za-z0-9_-]+$/.test(name)) throw new TypeError('The cookie name may hold letters, digits, - and _');
   // `__Host-` binds the cookie to this host, https and path / (browsers enforce it).
   const cookieName = secure ? `__Host-${name}` : name;
@@ -156,6 +163,8 @@ export function createStaff({
   }
 
   const isOwner = (who) => Boolean(who && !who.disabled && who.roles?.includes(OWNER));
+  /** The roles someone may give an invite: every role for an owner, what `invites` says for others. */
+  const canGive = (who) => (!who || who.disabled ? [] : isOwner(who) ? [...roles] : roles.filter((role) => (who.roles ?? []).some((mine) => invites[mine]?.includes(role))));
   const fresh = (who) => (who?.account ? view({ key: who.account, ...store.get('accounts', who.account) }) : null);
 
   return {
@@ -272,12 +281,17 @@ export function createStaff({
     /** Every account, for the owner's staff page. */
     list: () => accounts().map(view).sort((a, b) => a.name.localeCompare(b.name)),
 
+    /** The roles `who` may give someone they invite; empty if they can't invite. */
+    grantable: (who) => canGive(fresh(who)),
+
     /** Invite someone by email, with their roles: a link token to send them. */
     async invite(by, { email, name = '', roles: given = ['staff'] } = {}) {
-      if (!isOwner(fresh(by))) return { error: 'Only an owner can invite people.' };
+      const allowed = canGive(fresh(by));
+      if (!allowed.length) return { error: 'Only an owner can invite people.' };
       email = cleanEmail(email);
       if (!EMAIL.test(email)) return { error: 'Give their email address.' };
       if (!validRoles(given)) return { error: 'Choose what they can do.' };
+      if (!given.every((role) => allowed.includes(role))) return { error: 'You can’t give someone that role.' };
       if (byEmail(email)) return { error: 'Someone already has an account with that email.' };
       return { ok: true, token: await issue('invite', { email, name: String(name).trim().slice(0, 80), roles: [...given], account: '' }, tokenMs) };
     },
