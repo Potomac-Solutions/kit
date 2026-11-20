@@ -1,6 +1,6 @@
 # Kit
 
-Shared server modules for Potomac Solutions' platforms (Tailgate, CineStack, Outfitter and the rest). Built to sit on [Zubra](https://github.com/journey-to-code-org/zubra): `@zubra/server`, `@zubra/actions`, `@zubra/sync` and Zubra UI.
+Shared server modules for Potomac Solutions' platforms (Tailgate, CineStack, Outfitter and the rest). Built to sit on [Zubra](https://github.com/zubra-js/zubra): `@zubra/server`, `@zubra/actions`, `@zubra/sync` and Zubra UI.
 
 Private. The name is a placeholder. Version 0.7.0: no dependencies, Node 22.13 or later.
 
